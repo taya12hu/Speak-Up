@@ -1,5 +1,5 @@
 // Gemini responseSchema definitions. Passing a schema (not just responseMimeType: json)
-// is what actually gets reliable, complete structured output — see lib/ai.js for why.
+// is what actually gets reliable, complete structured output — see services/gemini.js for why.
 
 export const TOPICS_SCHEMA = {
   type: 'ARRAY',
@@ -27,6 +27,7 @@ export const INTERVIEW_SAMPLE_SCHEMA = {
 
 // Fixed categories (not free text) so grammar issues can be aggregated exactly across
 // sessions for weak-point tracking, instead of needing fuzzy text matching later.
+// Mirrored as a type in client/src/types.ts — keep the two lists in sync.
 export const GRAMMAR_CATEGORIES = [
   'verb tense',
   'subject-verb agreement',
@@ -81,6 +82,7 @@ export const ANALYSIS_SCHEMA = {
         required: ['phrase', 'suggestion'],
       },
     },
+    // Per-dimension scores only; the weighted overall score is computed in scoring.js.
     scores: {
       type: 'OBJECT',
       properties: {
@@ -92,11 +94,10 @@ export const ANALYSIS_SCHEMA = {
         confidence: { type: 'INTEGER' },
         topicRelevance: { type: 'INTEGER' },
         ideaDepth: { type: 'INTEGER' },
-        overall: { type: 'INTEGER' },
       },
       required: [
         'grammar', 'coherence', 'vocabulary', 'fluency', 'fillerWords',
-        'confidence', 'topicRelevance', 'ideaDepth', 'overall',
+        'confidence', 'topicRelevance', 'ideaDepth',
       ],
     },
     summary: { type: 'STRING' },

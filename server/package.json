@@ -1,21 +1,27 @@
 {
-  "name": "server",
+  "name": "speak-up-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "node --watch server.js",
-    "start": "node server.js"
-  },
-  "keywords": [],
-  "author": "",
+  "description": "Speak Up API: Gemini proxy, local whisper.cpp transcription, and session history",
+  "private": true,
   "license": "ISC",
   "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "lint": "oxlint --deny-warnings"
+  },
   "dependencies": {
     "@google/genai": "^2.11.0",
-    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "multer": "^2.2.0"
+    "multer": "^2.4.0"
+  },
+  "devDependencies": {
+    "oxlint": "^1.87.0"
   }
 }
