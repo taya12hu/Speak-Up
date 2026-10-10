@@ -5,33 +5,55 @@ import { HttpError } from './errors.js';
 import { contentRouter } from './routes/content.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { speechRouter } from './routes/speech.js';
+import { requireAuth } from './services/auth.js';
 
 /**
  * Builds the Express app from its dependencies so tests can supply their own services.
  *
  * @param {object} deps
- * @param {Function} deps.askJSON          Gemini structured-output call (services/gemini.js)
- * @param {Function} deps.transcribeWav    whisper.cpp transcription (services/whisper.js)
- * @param {Function} deps.checkWhisper     whisper.cpp installation check (services/whisper.js)
- * @param {object}   deps.sessionStore     session history persistence (services/sessionStore.js)
- * @param {string}   deps.tmpDir           where uploaded audio is staged during transcription
- * @param {boolean}  deps.geminiConfigured whether an API key is present, reported by /api/health
- * @param {string}  [deps.clientDistDir]   built client to serve, if it exists
+ * @param {Function} deps.askJSON           Gemini structured-output call (services/gemini.js)
+ * @param {Function} deps.transcribeWav     whisper.cpp transcription (services/whisper.js)
+ * @param {Function} deps.checkWhisper      whisper.cpp installation check (services/whisper.js)
+ * @param {Function} deps.verifyToken       access-token verifier → { userId, email } (services/auth.js)
+ * @param {object}   deps.sessionRepository per-user practice history (services/sessionRepository.js)
+ * @param {string}   deps.tmpDir            where uploaded audio is staged during transcription
+ * @param {boolean}  deps.geminiConfigured  whether an API key is present, reported by /api/health
+ * @param {boolean}  deps.authConfigured    whether Supabase is configured, reported by /api/health
+ * @param {string}  [deps.clientDistDir]    built client to serve, if it exists
  */
-export function createApp({ askJSON, transcribeWav, checkWhisper, sessionStore, tmpDir, geminiConfigured, clientDistDir }) {
+export function createApp({
+  askJSON,
+  transcribeWav,
+  checkWhisper,
+  verifyToken,
+  sessionRepository,
+  tmpDir,
+  geminiConfigured,
+  authConfigured,
+  clientDistDir,
+}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '2mb' }));
 
   const api = express.Router();
   api.use(rejectCrossSite);
+  // The only public endpoint: setup diagnostics, no user data.
   api.get('/health', async (_req, res) => {
     const whisper = await checkWhisper();
-    res.json({ gemini: { configured: geminiConfigured }, whisper: { binary: whisper.binary, model: whisper.model } });
+    res.json({
+      gemini: { configured: geminiConfigured },
+      whisper: { binary: whisper.binary, model: whisper.model },
+      auth: { configured: authConfigured },
+    });
   });
+  // Everything below requires a verified user: history is private, and the AI and transcription
+  // routes spend the operator's Gemini quota and CPU. Auth runs before multer, so
+  // unauthenticated uploads are never written to disk.
+  api.use(requireAuth(verifyToken));
   api.use(contentRouter({ askJSON }));
   api.use(speechRouter({ askJSON, transcribeWav, tmpDir }));
-  api.use(sessionsRouter({ sessionStore }));
+  api.use(sessionsRouter({ sessionRepository }));
   api.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
   app.use('/api', api);
 
@@ -56,13 +78,13 @@ function rejectCrossSite(req, _res, next) {
 
 // Express 5 forwards rejected promises from async handlers here, so routes need no try/catch.
 function errorHandler(err, req, res, _next) {
-  const { status, message } = describeError(err);
+  const { status, message, code } = describeError(err);
   if (status >= 500) console.error(`[${req.method} ${req.originalUrl}]`, err);
-  res.status(status).json({ error: message });
+  res.status(status).json(code ? { error: message, code } : { error: message });
 }
 
 function describeError(err) {
-  if (err instanceof HttpError) return { status: err.status, message: err.message };
+  if (err instanceof HttpError) return { status: err.status, message: err.message, code: err.code };
   if (err instanceof multer.MulterError) {
     return { status: err.code === 'LIMIT_FILE_SIZE' ? 413 : 400, message: `Upload rejected: ${err.message}` };
   }

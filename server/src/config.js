@@ -30,6 +30,17 @@ export const config = Object.freeze({
   whisperBinPath: env.WHISPER_BIN_PATH || path.join(REPO_ROOT, 'whisper', 'bin', whisperExe),
   whisperModelPath: env.WHISPER_MODEL_PATH || path.join(REPO_ROOT, 'whisper', 'models', 'ggml-base.en.bin'),
   whisperTimeoutMs: intFromEnv('WHISPER_TIMEOUT_MS', 5 * 60 * 1000),
+  // Supabase Auth + Postgres. Only the public publishable (or legacy anon) key is needed at
+  // runtime: database queries run with each user's own JWT so Row Level Security applies.
+  // The service-role key is intentionally not read here (see scripts/ for its only use).
+  supabase: {
+    url: (env.SUPABASE_URL || '').replace(/\/+$/, ''),
+    publishableKey: env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || '',
+    // Only for projects still on the legacy shared-secret (HS256) JWT signing key. Projects using
+    // asymmetric signing keys (the default for new projects) are verified via the public JWKS.
+    jwtSecret: env.SUPABASE_JWT_SECRET || '',
+  },
+  // Temporary audio uploads during transcription (deleted after each request).
   dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.join(SERVER_ROOT, 'data'),
   // Built client, served by Express when present so `npm start` is a single-origin deployment.
   clientDistDir: path.join(REPO_ROOT, 'client', 'dist'),
