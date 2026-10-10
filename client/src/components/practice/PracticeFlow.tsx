@@ -1,11 +1,18 @@
+import { ArrowLeft, Check, ListChecks, RotateCcw, Shuffle } from 'lucide-react';
 import { useState } from 'react';
 import { analyzeSpeech, describeError, saveSession, transcribeAudio } from '../../lib/api';
-import { computeFluencyMetrics } from '../../lib/fluency';
 import type { AnalysisResult, FluencyMetrics, OutlineNotes, PracticeMode, Session } from '../../types';
+import { computeFluencyMetrics } from '../../lib/fluency';
 import AnalysisReport from '../report/AnalysisReport';
 import SessionComparison from '../report/SessionComparison';
+import Alert from '../ui/Alert';
+import Badge from '../ui/Badge';
+import Button from '../ui/Button';
+import { Card } from '../ui/Card';
+import Spinner from '../ui/Spinner';
 import PrepTimer from './PrepTimer';
 import Recorder from './Recorder';
+import StageStepper from './StageStepper';
 import Timer from './Timer';
 
 interface PracticeFlowProps {
@@ -19,6 +26,11 @@ interface PracticeFlowProps {
 type Stage = 'prep' | 'practice' | 'transcribing' | 'analyzing' | 'report' | 'error';
 
 const PREP_SECONDS = 60;
+
+const MODE_LABELS: Record<PracticeMode, string> = { random: 'Random topic', interview: 'Interview', vocab: 'Vocabulary' };
+
+// Errors can only happen after recording (transcription or analysis), so they sit on the "Analyse" step.
+const STEP_INDEX: Record<Stage, number> = { prep: 0, practice: 1, transcribing: 2, analyzing: 2, error: 2, report: 3 };
 
 /**
  * One practice attempt: prep → record → transcribe (local whisper) → metrics (client-side)
@@ -70,12 +82,26 @@ export default function PracticeFlow({ topic, mode, onReset, compareTo }: Practi
     }
   };
 
+  const hasOutline = outline && (outline.opening || outline.example || outline.closing);
+
   return (
-    <div className="flex flex-col items-center gap-6">
-      <div className="max-w-xl rounded-lg border border-gray-800 bg-gray-900/50 px-5 py-4 text-center">
-        <p className="text-xs uppercase tracking-wide text-violet-400">Your topic</p>
-        <p className="mt-1 text-lg text-gray-100">{topic}</p>
+    <div className="mx-auto flex max-w-4xl flex-col gap-6">
+      <div>
+        <Button variant="ghost" size="sm" icon={<ArrowLeft className="size-4" />} onClick={onReset} className="-ml-2">
+          {compareTo ? 'Back to history' : 'Choose another topic'}
+        </Button>
       </div>
+
+      <Card className="p-5 sm:p-6">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Badge tone="accent">{MODE_LABELS[mode]}</Badge>
+          {compareTo && <Badge>Retry · compared with {new Date(compareTo.date).toLocaleDateString()}</Badge>}
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight text-balance text-fg sm:text-2xl">{topic}</h1>
+        <div className="mt-5 border-t border-line pt-4">
+          <StageStepper current={STEP_INDEX[stage]} />
+        </div>
+      </Card>
 
       {stage === 'prep' && (
         <PrepTimer
@@ -89,58 +115,83 @@ export default function PracticeFlow({ topic, mode, onReset, compareTo }: Practi
 
       {stage === 'practice' && (
         <>
-          {outline && (outline.opening || outline.example || outline.closing) && (
-            <div className="w-full max-w-xl rounded-lg border border-sky-900 bg-sky-950/20 px-4 py-3 text-sm text-gray-300">
-              <p className="mb-1 text-xs uppercase tracking-wide text-sky-400">Your outline</p>
-              {outline.opening && <p>1. {outline.opening}</p>}
-              {outline.example && <p>2. {outline.example}</p>}
-              {outline.closing && <p>3. {outline.closing}</p>}
-            </div>
+          {hasOutline && (
+            <Card className="p-5">
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-fg">
+                <ListChecks className="size-4 text-subtle" aria-hidden="true" /> Your outline
+              </p>
+              <ol className="grid gap-2 text-sm sm:grid-cols-3">
+                {[outline.opening, outline.example, outline.closing].map((note, i) =>
+                  note ? (
+                    <li key={i} className="rounded-lg bg-surface-2 px-3 py-2 text-fg">
+                      <span className="mr-1.5 font-semibold text-subtle">{i + 1}.</span>
+                      {note}
+                    </li>
+                  ) : null,
+                )}
+              </ol>
+            </Card>
           )}
-          <Timer />
-          <Recorder onRecorded={handleRecorded} />
+          <div className="grid gap-6 md:grid-cols-2">
+            <Recorder onRecorded={handleRecorded} />
+            <Timer />
+          </div>
         </>
       )}
 
       {(stage === 'transcribing' || stage === 'analyzing') && (
-        <div className="flex flex-col items-center gap-2 py-8" role="status">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
-          <p className="text-sm text-gray-400">
-            {stage === 'transcribing' ? 'Transcribing your speech…' : 'Analyzing your answer…'}
-          </p>
-        </div>
+        <Card className="p-8" as="section">
+          <div role="status" aria-live="polite" className="mx-auto flex max-w-sm flex-col gap-4">
+            <p className="text-center text-base font-semibold text-fg">Generating your feedback</p>
+            <ProcessingStep label="Transcribing speech locally" state={stage === 'transcribing' ? 'active' : 'done'} />
+            <ProcessingStep label="Analysing your answer with AI" state={stage === 'analyzing' ? 'active' : 'pending'} />
+          </div>
+        </Card>
       )}
 
       {stage === 'error' && (
-        <div role="alert" className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300">
-          {errorMsg}
-        </div>
+        <Card className="flex flex-col gap-4 p-6">
+          <Alert>{errorMsg}</Alert>
+          <div className="flex flex-wrap gap-2">
+            <Button icon={<RotateCcw className="size-4" />} onClick={() => setStage('practice')}>
+              Try again
+            </Button>
+            <Button variant="secondary" onClick={onReset}>
+              Choose another topic
+            </Button>
+          </div>
+        </Card>
       )}
 
       {stage === 'report' && analysis && metrics && (
         <>
-          {saveWarning && (
-            <div role="alert" className="w-full max-w-2xl rounded-lg border border-amber-800 bg-amber-950/30 px-4 py-3 text-sm text-amber-300">
-              {saveWarning}
-            </div>
-          )}
+          {saveWarning && <Alert tone="warning">{saveWarning}</Alert>}
           {compareTo && <SessionComparison previous={compareTo} currentAnalysis={analysis} currentTranscript={transcript} />}
           <AnalysisReport transcript={transcript} metrics={metrics} analysis={analysis} />
+          <div className="flex flex-wrap justify-center gap-2 border-t border-line pt-6">
+            <Button icon={<Shuffle className="size-4" />} onClick={onReset}>
+              Practise another topic
+            </Button>
+          </div>
         </>
       )}
+    </div>
+  );
+}
 
-      {(stage === 'report' || stage === 'error') && (
-        <div className="flex gap-3">
-          {stage === 'error' && (
-            <button onClick={() => setStage('practice')} className="rounded-md border border-gray-700 px-5 py-2 text-gray-300 hover:bg-gray-800">
-              Try again
-            </button>
-          )}
-          <button onClick={onReset} className="rounded-md bg-violet-600 px-5 py-2 text-white hover:bg-violet-500">
-            Practice another topic
-          </button>
-        </div>
-      )}
+function ProcessingStep({ label, state }: { label: string; state: 'pending' | 'active' | 'done' }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-line px-4 py-3">
+      <span className="flex size-5 items-center justify-center">
+        {state === 'done' ? (
+          <Check className="size-4 text-success" aria-hidden="true" />
+        ) : state === 'active' ? (
+          <Spinner className="size-4 text-accent-text" />
+        ) : (
+          <span className="size-2 rounded-full bg-line-strong" aria-hidden="true" />
+        )}
+      </span>
+      <span className={`text-sm ${state === 'pending' ? 'text-subtle' : 'text-fg'}`}>{label}</span>
     </div>
   );
 }

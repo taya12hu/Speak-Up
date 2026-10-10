@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { ArrowRight, MessageSquareText, Sparkles } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
 import { describeError, generateTopics } from '../../lib/api';
 import { CATEGORIES, DIFFICULTIES } from '../../lib/practiceOptions';
 import type { Difficulty } from '../../types';
 import PracticeFlow from '../practice/PracticeFlow';
+import Alert from '../ui/Alert';
+import Button from '../ui/Button';
+import { Card } from '../ui/Card';
+import EmptyState from '../ui/EmptyState';
+import { Field, Select, TextInput } from '../ui/Field';
+import PageHeader from '../ui/PageHeader';
+
+const TOPIC_COUNTS = [3, 5, 10];
 
 export default function TopicGenerator() {
   const [category, setCategory] = useState<string>(CATEGORIES[0].id);
@@ -14,13 +23,13 @@ export default function TopicGenerator() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const spin = async () => {
+  const generate = async (e: FormEvent) => {
+    e.preventDefault();
     setLoading(true);
     setError('');
     setSelected(null);
     try {
-      const result = await generateTopics({ category, difficulty, theme: theme || undefined, count });
-      setTopics(result);
+      setTopics(await generateTopics({ category, difficulty, theme: theme.trim() || undefined, count }));
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -32,74 +41,97 @@ export default function TopicGenerator() {
     return <PracticeFlow topic={selected} mode="random" onReset={() => setSelected(null)} />;
   }
 
+  const categoryDescription = CATEGORIES.find((c) => c.id === category)?.description;
+
   return (
-    <div className="flex flex-col items-center gap-6">
-      <div className="flex w-full max-w-xl flex-wrap items-center justify-center gap-3">
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200"
-        >
-          {CATEGORIES.map((c) => (
-            <option key={c.id} value={c.id} title={c.description}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={difficulty}
-          onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-          className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200"
-        >
-          {DIFFICULTIES.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
-        <select
-          value={count}
-          onChange={(e) => setCount(Number(e.target.value))}
-          className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200"
-        >
-          {[3, 5, 10].map((n) => (
-            <option key={n} value={n}>
-              {n} topics
-            </option>
-          ))}
-        </select>
-      </div>
+    <div>
+      <PageHeader title="Random Topic" description="Generate impromptu topics, pick one, and answer it out loud." />
 
-      <input
-        value={theme}
-        onChange={(e) => setTheme(e.target.value)}
-        placeholder="Optional: steer topics toward a theme (e.g. 'career', 'travel')"
-        className="w-full max-w-xl rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600"
-      />
+      <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
+        <Card className="h-fit p-5 lg:sticky lg:top-24">
+          <form onSubmit={generate} className="flex flex-col gap-4">
+            <Field label="Category" hint={categoryDescription}>
+              {(id) => (
+                <Select id={id} value={category} onChange={(e) => setCategory(e.target.value)}>
+                  {CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
 
-      <button
-        onClick={spin}
-        disabled={loading}
-        className="rounded-md bg-violet-600 px-8 py-2.5 font-medium text-white hover:bg-violet-500 disabled:opacity-50"
-      >
-        {loading ? 'Spinning…' : 'Spin for topics'}
-      </button>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Difficulty">
+                {(id) => (
+                  <Select id={id} value={difficulty} onChange={(e) => setDifficulty(e.target.value as Difficulty)}>
+                    {DIFFICULTIES.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Topics">
+                {(id) => (
+                  <Select id={id} value={count} onChange={(e) => setCount(Number(e.target.value))}>
+                    {TOPIC_COUNTS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+            <Field label="Theme" hint="Optional — steer topics toward a subject.">
+              {(id) => (
+                <TextInput id={id} value={theme} maxLength={100} onChange={(e) => setTheme(e.target.value)} placeholder="e.g. career, travel" />
+              )}
+            </Field>
 
-      {topics.length > 0 && (
-        <div className="flex w-full max-w-xl flex-col gap-2">
-          {topics.map((t, i) => (
-            <button
-              key={i}
-              onClick={() => setSelected(t)}
-              className="rounded-lg border border-gray-800 bg-gray-900/50 px-4 py-3 text-left text-sm text-gray-200 hover:border-violet-600 hover:bg-gray-900"
-            >
-              {t}
-            </button>
-          ))}
+            <Button type="submit" loading={loading} icon={<Sparkles className="size-4" />} className="w-full">
+              {loading ? 'Generating…' : topics.length ? 'Generate new topics' : 'Generate topics'}
+            </Button>
+          </form>
+        </Card>
+
+        <div className="flex flex-col gap-3">
+          {error && <Alert>{error}</Alert>}
+
+          {topics.length === 0 ? (
+            <EmptyState
+              icon={<MessageSquareText className="size-5" />}
+              title="No topics yet"
+              description="Choose a category and difficulty, then generate a set of topics to practise with."
+            />
+          ) : (
+            <>
+              <p className="text-sm text-muted">Select a topic to start a timed attempt.</p>
+              <ul className="flex flex-col gap-2">
+                {topics.map((t, i) => (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(t)}
+                      className="group flex w-full items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3.5 text-left shadow-sm transition hover:border-accent-line hover:bg-accent-soft/40"
+                    >
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-2 text-xs font-semibold text-muted tabular-nums">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 text-sm font-medium text-fg">{t}</span>
+                      <ArrowRight className="size-4 shrink-0 text-subtle transition group-hover:translate-x-0.5 group-hover:text-accent-text" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

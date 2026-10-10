@@ -1,5 +1,9 @@
+import { ArrowRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { OutlineNotes } from '../../types';
+import Button from '../ui/Button';
+import { Card, CardHeader } from '../ui/Card';
+import { Field, TextInput } from '../ui/Field';
 import ProgressRing from './ProgressRing';
 
 interface PrepTimerProps {
@@ -9,6 +13,13 @@ interface PrepTimerProps {
 
 const EMPTY_OUTLINE: OutlineNotes = { opening: '', example: '', closing: '' };
 
+const OUTLINE_FIELDS: { key: keyof OutlineNotes; label: string; placeholder: string }[] = [
+  { key: 'opening', label: 'Opening point', placeholder: 'Your main answer in one line' },
+  { key: 'example', label: 'Example or reason', placeholder: 'A specific example to back it up' },
+  { key: 'closing', label: 'Closing point', placeholder: 'How you will wrap up' },
+];
+
+/** Planning countdown with optional outline notes; hands the notes over when time is up or the user skips. */
 export default function PrepTimer({ seconds = 60, onDone }: PrepTimerProps) {
   const [remaining, setRemaining] = useState(seconds);
   const [outline, setOutline] = useState<OutlineNotes>(EMPTY_OUTLINE);
@@ -30,41 +41,26 @@ export default function PrepTimer({ seconds = 60, onDone }: PrepTimerProps) {
     setOutline((o) => ({ ...o, [field]: e.target.value }));
 
   return (
-    <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-xl border border-gray-800 bg-gray-900/50 p-6">
-      <p className="text-sm text-gray-400">Take a moment to think about your answer</p>
+    <Card className="p-6">
+      <CardHeader title="Plan your answer" description="Use this minute to organise your thoughts. Notes are for you only and are not graded." />
 
-      <ProgressRing remainingSec={remaining} totalSec={seconds} color="#38bdf8" className="h-32 w-32 text-2xl" />
+      <div className="mt-6 grid items-center gap-8 md:grid-cols-[auto_1fr]">
+        <ProgressRing remainingSec={remaining} totalSec={seconds} tone="info" className="mx-auto size-36 text-2xl" />
 
-      <div className="flex w-full flex-col gap-2">
-        <p className="text-xs uppercase tracking-wide text-gray-500">
-          Jot a quick outline — just for you, not graded
-        </p>
-        <input
-          value={outline.opening}
-          onChange={setField('opening')}
-          placeholder="Opening point…"
-          className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600"
-        />
-        <input
-          value={outline.example}
-          onChange={setField('example')}
-          placeholder="Example or reason…"
-          className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600"
-        />
-        <input
-          value={outline.closing}
-          onChange={setField('closing')}
-          placeholder="Closing point…"
-          className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600"
-        />
+        <div className="flex flex-col gap-3">
+          {OUTLINE_FIELDS.map(({ key, label, placeholder }) => (
+            <Field key={key} label={label}>
+              {(id) => <TextInput id={id} value={outline[key]} onChange={setField(key)} placeholder={placeholder} />}
+            </Field>
+          ))}
+        </div>
       </div>
 
-      <button
-        onClick={() => setRemaining(0)}
-        className="rounded-md bg-sky-600 px-6 py-2 font-medium text-white hover:bg-sky-500"
-      >
-        Start speaking now
-      </button>
-    </div>
+      <div className="mt-6 flex justify-end border-t border-line pt-4">
+        <Button onClick={() => setRemaining(0)} icon={<ArrowRight className="size-4" />}>
+          I'm ready to speak
+        </Button>
+      </div>
+    </Card>
   );
 }

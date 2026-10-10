@@ -1,4 +1,7 @@
+import { Pause, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import Button from '../ui/Button';
+import { Card, CardHeader } from '../ui/Card';
 import ProgressRing from './ProgressRing';
 
 const PRESETS = [60, 180, 300];
@@ -49,14 +52,21 @@ export default function Timer() {
   const primaryLabel = remainingSec === 0 ? 'Restart' : running ? 'Pause' : remainingSec === durationSec ? 'Start' : 'Resume';
 
   return (
-    <div className="flex flex-col items-center gap-4 rounded-xl border border-gray-800 bg-gray-900/50 p-6">
-      <div className="flex gap-2">
+    <Card className="flex flex-col p-5">
+      <CardHeader
+        title="Speaking timer"
+        description={remainingSec === 0 ? "Time's up — wrap up your answer." : 'Optional pacing aid.'}
+      />
+
+      <div role="group" aria-label="Timer length" className="mt-4 grid grid-cols-3 gap-1 rounded-lg bg-surface-2 p-1">
         {PRESETS.map((p) => (
           <button
             key={p}
+            type="button"
+            aria-pressed={durationSec === p}
             onClick={() => setPreset(p)}
-            className={`rounded-md px-3 py-1 text-sm ${
-              durationSec === p ? 'bg-violet-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+            className={`rounded-md py-1.5 text-sm font-medium transition ${
+              durationSec === p ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg'
             }`}
           >
             {p / 60} min
@@ -64,22 +74,20 @@ export default function Timer() {
         ))}
       </div>
 
-      <ProgressRing remainingSec={remainingSec} totalSec={durationSec} color="#a855f7" className="h-40 w-40 text-3xl" />
+      <ProgressRing remainingSec={remainingSec} totalSec={durationSec} className="mx-auto my-6 size-36 text-3xl" />
 
-      <div className="flex items-center gap-2">
-        <button onClick={() => adjust(-STEP_SEC)} className="rounded-md bg-gray-800 px-3 py-1 text-gray-300 hover:bg-gray-700">
-          -30s
-        </button>
-        <button onClick={togglePrimary} className="rounded-md bg-violet-600 px-6 py-2 font-medium text-white hover:bg-violet-500">
+      <div className="flex items-center justify-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => adjust(-STEP_SEC)} aria-label="Remove 30 seconds">
+          −30s
+        </Button>
+        <Button size="sm" onClick={togglePrimary} icon={running ? <Pause className="size-4" /> : <Play className="size-4" />} className="min-w-24">
           {primaryLabel}
-        </button>
-        <button onClick={() => adjust(STEP_SEC)} className="rounded-md bg-gray-800 px-3 py-1 text-gray-300 hover:bg-gray-700">
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => adjust(STEP_SEC)} aria-label="Add 30 seconds">
           +30s
-        </button>
+        </Button>
+        <Button variant="ghost" size="sm" onClick={reset} aria-label="Reset timer" icon={<RotateCcw className="size-4" />} />
       </div>
-      <button onClick={reset} className="text-xs text-gray-500 hover:text-gray-300">
-        Reset
-      </button>
-    </div>
+    </Card>
   );
 }
