@@ -1,55 +1,72 @@
 import { useState } from 'react';
-import Timer from './Timer';
-import Recorder from './Recorder';
+import { analyzeSpeech, describeError, saveSession, transcribeAudio } from '../../lib/api';
+import { computeFluencyMetrics } from '../../lib/fluency';
+import type { AnalysisResult, FluencyMetrics, OutlineNotes, PracticeMode, Session } from '../../types';
+import AnalysisReport from '../report/AnalysisReport';
+import SessionComparison from '../report/SessionComparison';
 import PrepTimer from './PrepTimer';
-import AnalysisReport from './AnalysisReport';
-import SessionComparison from './SessionComparison';
-import { analyzeSpeech, saveSession, transcribeAudio } from '../lib/api';
-import { computeFluencyMetrics } from '../lib/fluency';
-import type { AnalysisResult, FluencyMetrics, Mode, OutlineNotes, Session } from '../types';
+import Recorder from './Recorder';
+import Timer from './Timer';
 
 interface PracticeFlowProps {
   topic: string;
-  mode: Mode;
+  mode: PracticeMode;
   onReset: () => void;
+  /** A previous attempt at the same topic to compare the new result against. */
   compareTo?: Session;
 }
 
 type Stage = 'prep' | 'practice' | 'transcribing' | 'analyzing' | 'report' | 'error';
 
+const PREP_SECONDS = 60;
+
+/**
+ * One practice attempt: prep → record → transcribe (local whisper) → metrics (client-side)
+ * → analysis (Gemini) → report, saving the result to history.
+ */
 export default function PracticeFlow({ topic, mode, onReset, compareTo }: PracticeFlowProps) {
   const [stage, setStage] = useState<Stage>('prep');
   const [transcript, setTranscript] = useState('');
   const [metrics, setMetrics] = useState<FluencyMetrics | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [saveWarning, setSaveWarning] = useState('');
   const [outline, setOutline] = useState<OutlineNotes | null>(null);
+
+  const fail = (message: string) => {
+    setErrorMsg(message);
+    setStage('error');
+  };
 
   const handleRecorded = async (wavBlob: Blob) => {
     setStage('transcribing');
+    setSaveWarning('');
+
+    let text: string;
+    let computedMetrics: FluencyMetrics;
+    let result: AnalysisResult;
     try {
       const transcribed = await transcribeAudio(wavBlob);
-      const computedMetrics = computeFluencyMetrics(transcribed);
-      setTranscript(transcribed.text);
+      text = transcribed.text;
+      if (!text) return fail('No speech was detected in the recording. Check your microphone and try again.');
+      computedMetrics = computeFluencyMetrics(transcribed);
+      setTranscript(text);
       setMetrics(computedMetrics);
 
       setStage('analyzing');
-      const result = await analyzeSpeech({ topic, transcript: transcribed.text, metrics: computedMetrics });
-      setAnalysis(result);
-      setStage('report');
-
-      await saveSession({
-        id: crypto.randomUUID(),
-        date: new Date().toISOString(),
-        mode,
-        topic,
-        transcript: transcribed.text,
-        metrics: computedMetrics,
-        analysis: result,
-      });
+      result = await analyzeSpeech({ topic, transcript: text, metrics: computedMetrics });
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong during analysis.');
-      setStage('error');
+      return fail(describeError(err));
+    }
+
+    setAnalysis(result);
+    setStage('report');
+
+    // The report is already on screen; a failed save should not take it away.
+    try {
+      await saveSession({ mode, topic, transcript: text, metrics: computedMetrics, analysis: result });
+    } catch (err) {
+      setSaveWarning(`This attempt could not be saved to your history: ${describeError(err)}`);
     }
   };
 
@@ -62,7 +79,7 @@ export default function PracticeFlow({ topic, mode, onReset, compareTo }: Practi
 
       {stage === 'prep' && (
         <PrepTimer
-          seconds={60}
+          seconds={PREP_SECONDS}
           onDone={(notes) => {
             setOutline(notes);
             setStage('practice');
@@ -86,7 +103,7 @@ export default function PracticeFlow({ topic, mode, onReset, compareTo }: Practi
       )}
 
       {(stage === 'transcribing' || stage === 'analyzing') && (
-        <div className="flex flex-col items-center gap-2 py-8">
+        <div className="flex flex-col items-center gap-2 py-8" role="status">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
           <p className="text-sm text-gray-400">
             {stage === 'transcribing' ? 'Transcribing your speech…' : 'Analyzing your answer…'}
@@ -95,22 +112,34 @@ export default function PracticeFlow({ topic, mode, onReset, compareTo }: Practi
       )}
 
       {stage === 'error' && (
-        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300">{errorMsg}</div>
+        <div role="alert" className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+          {errorMsg}
+        </div>
       )}
 
       {stage === 'report' && analysis && metrics && (
         <>
-          {compareTo && (
-            <SessionComparison previous={compareTo} currentAnalysis={analysis} currentTranscript={transcript} />
+          {saveWarning && (
+            <div role="alert" className="w-full max-w-2xl rounded-lg border border-amber-800 bg-amber-950/30 px-4 py-3 text-sm text-amber-300">
+              {saveWarning}
+            </div>
           )}
+          {compareTo && <SessionComparison previous={compareTo} currentAnalysis={analysis} currentTranscript={transcript} />}
           <AnalysisReport transcript={transcript} metrics={metrics} analysis={analysis} />
         </>
       )}
 
       {(stage === 'report' || stage === 'error') && (
-        <button onClick={onReset} className="rounded-md bg-violet-600 px-5 py-2 text-white hover:bg-violet-500">
-          Practice another topic
-        </button>
+        <div className="flex gap-3">
+          {stage === 'error' && (
+            <button onClick={() => setStage('practice')} className="rounded-md border border-gray-700 px-5 py-2 text-gray-300 hover:bg-gray-800">
+              Try again
+            </button>
+          )}
+          <button onClick={onReset} className="rounded-md bg-violet-600 px-5 py-2 text-white hover:bg-violet-500">
+            Practice another topic
+          </button>
+        </div>
       )}
     </div>
   );

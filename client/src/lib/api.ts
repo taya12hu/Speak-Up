@@ -1,57 +1,81 @@
-import type { AnalysisResult, Difficulty, FluencyMetrics, Session, TranscribeResult, VocabEntry } from '../types';
+import type { AnalysisResult, FluencyMetrics, NewSession, Session, TopicRequest, TranscribeResult, VocabEntry } from '../types';
 
-const BASE = 'http://localhost:4000';
+// Relative URLs: in development Vite proxies /api to the Express server (see vite.config.ts),
+// and in production Express serves the built client itself, so the API is always same-origin.
+const BASE = '/api';
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+/** An API failure carrying the server's `{ error }` message, which is written to be user-facing. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, init);
+  } catch {
+    throw new ApiError(0, 'Could not reach the server. Is it running (npm run dev)?');
+  }
+  if (!res.ok) throw new ApiError(res.status, await errorMessage(res));
+  return res.json() as Promise<T>;
+}
+
+async function errorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.error === 'string') return body.error;
+  } catch {
+    // Not JSON (e.g. the dev proxy's own error page when the server is down).
+  }
+  return res.status >= 500 ? 'The server ran into a problem. Check the server logs.' : `Request failed (${res.status})`;
+}
+
+function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${path} failed: ${res.status} ${await res.text()}`);
-  return res.json();
 }
 
-export function generateTopics(params: {
-  category: string;
-  difficulty: Difficulty;
-  theme?: string;
-  count: number;
-  interview?: boolean;
-}): Promise<string[]> {
-  return post('/api/topics', params);
+export function generateTopics(params: TopicRequest): Promise<string[]> {
+  return post('/topics', params);
 }
 
 export function generateVocab(): Promise<VocabEntry> {
-  return post('/api/vocab', {});
+  return post('/vocab', {});
 }
 
-export function generateInterviewSample(question: string, framework: string): Promise<string> {
-  return post<{ sample: string }>('/api/interview-sample', { question, framework }).then((r) => r.sample);
+export async function generateInterviewSample(question: string, framework: string): Promise<string> {
+  const { sample } = await post<{ sample: string }>('/interview-sample', { question, framework });
+  return sample;
 }
 
-export async function transcribeAudio(wavBlob: Blob): Promise<TranscribeResult> {
+export function transcribeAudio(wavBlob: Blob): Promise<TranscribeResult> {
   const form = new FormData();
   form.append('audio', wavBlob, 'recording.wav');
-  const res = await fetch(`${BASE}/api/transcribe`, { method: 'POST', body: form });
-  if (!res.ok) throw new Error(`transcribe failed: ${res.status} ${await res.text()}`);
-  return res.json();
+  return request('/transcribe', { method: 'POST', body: form });
 }
 
-export function analyzeSpeech(params: {
-  topic: string;
-  transcript: string;
-  metrics: FluencyMetrics;
-}): Promise<AnalysisResult> {
-  return post('/api/analyze', params);
+export function analyzeSpeech(params: { topic: string; transcript: string; metrics: FluencyMetrics }): Promise<AnalysisResult> {
+  return post('/analyze', params);
 }
 
-export async function saveSession(session: Session): Promise<void> {
-  await post('/api/sessions', session);
+export function saveSession(session: NewSession): Promise<Session> {
+  return post('/sessions', session);
 }
 
-export async function getSessions(): Promise<Session[]> {
-  const res = await fetch(`${BASE}/api/sessions`);
-  if (!res.ok) throw new Error('failed to load sessions');
-  return res.json();
+export function getSessions(): Promise<Session[]> {
+  return request('/sessions');
+}
+
+/** Message to show the user for any thrown value. */
+export function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : 'Something went wrong.';
 }

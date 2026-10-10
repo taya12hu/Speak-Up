@@ -4,34 +4,29 @@ const TARGET_SAMPLE_RATE = 16000;
 export async function blobToWav(blob: Blob): Promise<Blob> {
   const arrayBuffer = await blob.arrayBuffer();
   const audioCtx = new AudioContext();
-  const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+  let decoded: AudioBuffer;
+  try {
+    decoded = await audioCtx.decodeAudioData(arrayBuffer);
+  } finally {
+    await audioCtx.close();
+  }
 
-  const offlineCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * TARGET_SAMPLE_RATE), TARGET_SAMPLE_RATE);
+  // A zero-length context throws, so always render at least one sample.
+  const length = Math.max(1, Math.ceil(decoded.duration * TARGET_SAMPLE_RATE));
+  const offlineCtx = new OfflineAudioContext(1, length, TARGET_SAMPLE_RATE);
   const source = offlineCtx.createBufferSource();
   source.buffer = decoded;
-
-  // Downmix to mono if needed.
-  const merger = offlineCtx.createChannelMerger(1);
-  if (decoded.numberOfChannels > 1) {
-    const splitter = offlineCtx.createChannelSplitter(decoded.numberOfChannels);
-    source.connect(splitter);
-    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
-      splitter.connect(merger, ch, 0);
-    }
-  } else {
-    source.connect(merger, 0, 0);
-  }
-  merger.connect(offlineCtx.destination);
+  // The 1-channel destination downmixes multi-channel input with the standard "speakers"
+  // rules (stereo → 0.5·(L+R)) and the context resamples to 16 kHz while rendering.
+  source.connect(offlineCtx.destination);
   source.start();
 
   const rendered = await offlineCtx.startRendering();
-  const samples = rendered.getChannelData(0);
-
-  await audioCtx.close();
-  return encodeWavPCM16(samples, TARGET_SAMPLE_RATE);
+  return encodeWavPCM16(rendered.getChannelData(0), TARGET_SAMPLE_RATE);
 }
 
-function encodeWavPCM16(samples: Float32Array, sampleRate: number): Blob {
+/** Encodes mono float samples in [-1, 1] as a 16-bit PCM WAV blob (clipping anything outside). */
+export function encodeWavPCM16(samples: Float32Array, sampleRate: number): Blob {
   const bytesPerSample = 2;
   const blockAlign = bytesPerSample;
   const dataSize = samples.length * bytesPerSample;

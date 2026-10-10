@@ -14,7 +14,12 @@ const FILLER_PATTERNS: [string, RegExp][] = [
 
 const PAUSE_THRESHOLD_SEC = 1.5;
 
-export function computeFluencyMetrics(result: TranscribeResult): FluencyMetrics {
+/**
+ * Deterministic speaking metrics from the transcript and whisper's near-word-level segments.
+ * Computed here rather than by the model so the numbers are exact and reproducible; the
+ * analysis prompt is told to use them as given.
+ */
+export function computeFluencyMetrics(result: TranscribeResult): Required<FluencyMetrics> {
   const fillerBreakdown: Record<string, number> = {};
   let fillerCount = 0;
   for (const [name, pattern] of FILLER_PATTERNS) {

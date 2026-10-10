@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { OutlineNotes } from '../types';
+import type { OutlineNotes } from '../../types';
+import ProgressRing from './ProgressRing';
 
 interface PrepTimerProps {
   seconds?: number;
@@ -25,10 +26,6 @@ export default function PrepTimer({ seconds = 60, onDone }: PrepTimerProps) {
     return () => window.clearTimeout(id);
   }, [remaining]);
 
-  const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
-  const ss = String(remaining % 60).padStart(2, '0');
-  const pct = (remaining / seconds) * 100;
-
   const setField = (field: keyof OutlineNotes) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setOutline((o) => ({ ...o, [field]: e.target.value }));
 
@@ -36,26 +33,7 @@ export default function PrepTimer({ seconds = 60, onDone }: PrepTimerProps) {
     <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-xl border border-gray-800 bg-gray-900/50 p-6">
       <p className="text-sm text-gray-400">Take a moment to think about your answer</p>
 
-      <div className="relative h-32 w-32">
-        <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="45" fill="none" stroke="#27272a" strokeWidth="8" />
-          <circle
-            cx="50"
-            cy="50"
-            r="45"
-            fill="none"
-            stroke="#38bdf8"
-            strokeWidth="8"
-            strokeDasharray={2 * Math.PI * 45}
-            strokeDashoffset={2 * Math.PI * 45 * (1 - pct / 100)}
-            strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 1s linear' }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center text-2xl font-mono text-gray-100">
-          {mm}:{ss}
-        </div>
-      </div>
+      <ProgressRing remainingSec={remaining} totalSec={seconds} color="#38bdf8" className="h-32 w-32 text-2xl" />
 
       <div className="flex w-full flex-col gap-2">
         <p className="text-xs uppercase tracking-wide text-gray-500">

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { generateInterviewSample, generateTopics } from '../lib/api';
-import { FRAMEWORKS, type Framework } from '../lib/frameworks';
-import PracticeFlow from './PracticeFlow';
+import { describeError, generateInterviewSample, generateTopics } from '../../lib/api';
+import { FRAMEWORKS, type Framework } from '../../lib/practiceOptions';
+import PracticeFlow from '../practice/PracticeFlow';
 
 export default function InterviewPrep() {
   const [questions, setQuestions] = useState<string[]>([]);
@@ -11,14 +11,18 @@ export default function InterviewPrep() {
   const [sample, setSample] = useState<string | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
   const [practicing, setPracticing] = useState(false);
+  const [error, setError] = useState('');
 
   const loadQuestions = async () => {
     setLoading(true);
+    setError('');
     setSelectedQuestion(null);
     setSample(null);
     try {
       const result = await generateTopics({ category: 'professional', difficulty: 'Medium', count: 5, interview: true });
       setQuestions(result);
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
@@ -27,9 +31,11 @@ export default function InterviewPrep() {
   const showSample = async () => {
     if (!selectedQuestion) return;
     setSampleLoading(true);
+    setError('');
     try {
-      const s = await generateInterviewSample(selectedQuestion, selectedFramework.id);
-      setSample(s);
+      setSample(await generateInterviewSample(selectedQuestion, selectedFramework.id));
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setSampleLoading(false);
     }
@@ -45,7 +51,10 @@ export default function InterviewPrep() {
         {FRAMEWORKS.map((fw) => (
           <button
             key={fw.id}
-            onClick={() => setSelectedFramework(fw)}
+            onClick={() => {
+              setSelectedFramework(fw);
+              setSample(null);
+            }}
             className={`rounded-lg border p-4 text-left ${
               selectedFramework.id === fw.id ? 'border-violet-600 bg-violet-950/30' : 'border-gray-800 bg-gray-900/50'
             }`}
@@ -72,6 +81,8 @@ export default function InterviewPrep() {
       >
         {loading ? 'Loading…' : 'Get interview questions'}
       </button>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {questions.length > 0 && (
         <div className="flex w-full max-w-2xl flex-col gap-2">

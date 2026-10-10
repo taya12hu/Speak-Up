@@ -1,4 +1,5 @@
-import type { AnalysisResult, Session } from '../types';
+import { compareScores, formatDelta } from '../../lib/scores';
+import type { AnalysisResult, Session } from '../../types';
 
 interface SessionComparisonProps {
   previous: Session;
@@ -6,40 +7,15 @@ interface SessionComparisonProps {
   currentTranscript: string;
 }
 
-const DIMENSION_LABELS: [keyof AnalysisResult['scores'], string][] = [
-  ['overall', 'Overall'],
-  ['topicRelevance', 'Topic Relevance'],
-  ['ideaDepth', 'Idea Depth'],
-  ['grammar', 'Grammar'],
-  ['coherence', 'Coherence'],
-  ['vocabulary', 'Vocabulary'],
-  ['fluency', 'Fluency'],
-  ['fillerWords', 'Filler Words'],
-  ['confidence', 'Confidence'],
-];
-
 function deltaColor(delta: number) {
   if (delta > 0) return 'text-emerald-400';
   if (delta < 0) return 'text-red-400';
   return 'text-gray-500';
 }
 
-function formatDelta(delta: number) {
-  if (delta === 0) return '±0';
-  return delta > 0 ? `+${delta}` : String(delta);
-}
-
+/** Score-by-score and transcript comparison against an earlier attempt at the same topic. */
 export default function SessionComparison({ previous, currentAnalysis, currentTranscript }: SessionComparisonProps) {
-  const rows = DIMENSION_LABELS.filter(
-    ([key]) => typeof previous.analysis.scores[key] === 'number' && typeof currentAnalysis.scores[key] === 'number',
-  ).map(([key, label]) => ({
-    key,
-    label,
-    before: previous.analysis.scores[key],
-    after: currentAnalysis.scores[key],
-    delta: currentAnalysis.scores[key] - previous.analysis.scores[key],
-  }));
-
+  const rows = compareScores(previous.analysis.scores, currentAnalysis.scores);
   const overallDelta = rows.find((r) => r.key === 'overall')?.delta ?? 0;
 
   return (
@@ -48,9 +24,7 @@ export default function SessionComparison({ previous, currentAnalysis, currentTr
         <h3 className="text-lg font-medium text-violet-300">Compared to your last attempt</h3>
         <span className={`text-lg font-bold ${deltaColor(overallDelta)}`}>{formatDelta(overallDelta)}</span>
       </div>
-      <p className="mb-4 text-xs text-gray-500">
-        Previous attempt: {new Date(previous.date).toLocaleDateString()}
-      </p>
+      <p className="mb-4 text-xs text-gray-500">Previous attempt: {new Date(previous.date).toLocaleDateString()}</p>
 
       <div className="mb-4 flex flex-col gap-1.5">
         {rows.map((r) => (

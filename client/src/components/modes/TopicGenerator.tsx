@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { generateTopics } from '../lib/api';
-import { CATEGORIES, DIFFICULTIES } from '../lib/frameworks';
-import type { Difficulty } from '../types';
-import PracticeFlow from './PracticeFlow';
+import { describeError, generateTopics } from '../../lib/api';
+import { CATEGORIES, DIFFICULTIES } from '../../lib/practiceOptions';
+import type { Difficulty } from '../../types';
+import PracticeFlow from '../practice/PracticeFlow';
 
 export default function TopicGenerator() {
   const [category, setCategory] = useState<string>(CATEGORIES[0].id);
@@ -21,8 +21,8 @@ export default function TopicGenerator() {
     try {
       const result = await generateTopics({ category, difficulty, theme: theme || undefined, count });
       setTopics(result);
-    } catch {
-      setError('Could not generate topics. Is the server running?');
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
@@ -41,7 +41,7 @@ export default function TopicGenerator() {
           className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200"
         >
           {CATEGORIES.map((c) => (
-            <option key={c.id} value={c.id}>
+            <option key={c.id} value={c.id} title={c.description}>
               {c.label}
             </option>
           ))}

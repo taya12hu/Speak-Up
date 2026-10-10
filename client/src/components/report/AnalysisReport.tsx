@@ -1,4 +1,5 @@
-import type { AnalysisResult, FluencyMetrics } from '../types';
+import { SCORE_DIMENSIONS, scoreColor } from '../../lib/scores';
+import type { AnalysisResult, FluencyMetrics } from '../../types';
 
 interface AnalysisReportProps {
   transcript: string;
@@ -6,23 +7,7 @@ interface AnalysisReportProps {
   analysis: AnalysisResult;
 }
 
-const SCORE_LABELS: [keyof AnalysisResult['scores'], string][] = [
-  ['topicRelevance', 'Topic Relevance'],
-  ['ideaDepth', 'Idea Depth'],
-  ['grammar', 'Grammar'],
-  ['coherence', 'Coherence'],
-  ['vocabulary', 'Vocabulary'],
-  ['fluency', 'Fluency'],
-  ['fillerWords', 'Filler Words'],
-  ['confidence', 'Confidence'],
-];
-
-function scoreColor(score: number) {
-  if (score >= 80) return 'bg-emerald-500';
-  if (score >= 60) return 'bg-amber-500';
-  return 'bg-red-500';
-}
-
+/** Full feedback for one attempt. Also renders legacy sessions, which lack some sections. */
 export default function AnalysisReport({ transcript, metrics, analysis }: AnalysisReportProps) {
   return (
     <div className="flex w-full max-w-2xl flex-col gap-6 text-left">
@@ -33,17 +18,21 @@ export default function AnalysisReport({ transcript, metrics, analysis }: Analys
         </div>
         <p className="mb-4 text-sm text-gray-400">{analysis.summary}</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {SCORE_LABELS.filter(([key]) => typeof analysis.scores[key] === 'number').map(([key, label]) => (
-            <div key={key}>
-              <div className="mb-1 flex justify-between text-xs text-gray-400">
-                <span>{label}</span>
-                <span>{analysis.scores[key]}</span>
+          {SCORE_DIMENSIONS.map(({ key, label }) => {
+            const score = analysis.scores[key];
+            if (typeof score !== 'number') return null;
+            return (
+              <div key={key}>
+                <div className="mb-1 flex justify-between text-xs text-gray-400">
+                  <span>{label}</span>
+                  <span>{score}</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
+                  <div className={`h-full ${scoreColor(score)}`} style={{ width: `${score}%` }} />
+                </div>
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
-                <div className={`h-full ${scoreColor(analysis.scores[key])}`} style={{ width: `${analysis.scores[key]}%` }} />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -85,7 +74,7 @@ export default function AnalysisReport({ transcript, metrics, analysis }: Analys
         <p className="mt-3 text-sm text-gray-400">{analysis.fluencyCommentary}</p>
       </section>
 
-      {analysis.stuckPoints?.length > 0 && (
+      {analysis.stuckPoints && analysis.stuckPoints.length > 0 && (
         <section className="rounded-xl border border-amber-900 bg-amber-950/10 p-5">
           <h3 className="mb-1 text-lg font-medium text-amber-300">You Got Stuck Here</h3>
           <p className="mb-3 text-xs text-gray-500">

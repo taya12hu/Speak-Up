@@ -1,4 +1,8 @@
-export type Mode = 'random' | 'interview' | 'vocab' | 'history';
+/** A practice mode; stored on each session. */
+export type PracticeMode = 'random' | 'interview' | 'vocab';
+
+/** A top-level navigation tab: the practice modes plus the history view. */
+export type Tab = PracticeMode | 'history';
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard' | 'Random';
 
@@ -17,10 +21,7 @@ export interface VocabEntry {
   speakingAngle: string;
 }
 
-export interface FrameworkId {
-  id: 'STAR' | 'PREP' | 'PPF' | 'MECE';
-}
-
+// Keep in sync with GRAMMAR_CATEGORIES in server/src/schemas.js (the model is constrained to these).
 export const GRAMMAR_CATEGORIES = [
   'verb tense',
   'subject-verb agreement',
@@ -35,11 +36,15 @@ export const GRAMMAR_CATEGORIES = [
 
 export type GrammarCategory = (typeof GRAMMAR_CATEGORIES)[number];
 
+// Fields marked "legacy" are always returned by the current server but are missing from
+// sessions saved by earlier versions, which still appear in History.
+
 export interface GrammarIssue {
   original: string;
   corrected: string;
   explanation: string;
-  category: GrammarCategory;
+  /** Legacy: absent in early sessions. */
+  category?: GrammarCategory;
 }
 
 export interface PronunciationTip {
@@ -54,10 +59,15 @@ export interface Scores {
   fluency: number;
   fillerWords: number;
   confidence: number;
-  topicRelevance: number;
-  ideaDepth: number;
+  /** Legacy: absent in early sessions. */
+  topicRelevance?: number;
+  /** Legacy: absent in early sessions. */
+  ideaDepth?: number;
+  /** Weighted average of the dimensions, computed by the server. */
   overall: number;
 }
+
+export type ScoreKey = keyof Scores;
 
 export interface StuckPoint {
   phrase: string;
@@ -69,9 +79,12 @@ export interface AnalysisResult {
   grammarIssues: GrammarIssue[];
   pronunciationTips: PronunciationTip[];
   fluencyCommentary: string;
-  topicRelevanceNote: string;
-  ideaDepthNote: string;
-  stuckPoints: StuckPoint[];
+  /** Legacy: absent in early sessions. */
+  topicRelevanceNote?: string;
+  /** Legacy: absent in early sessions. */
+  ideaDepthNote?: string;
+  /** Legacy: absent in early sessions. */
+  stuckPoints?: StuckPoint[];
   scores: Scores;
   summary: string;
 }
@@ -100,7 +113,8 @@ export interface FluencyMetrics {
   pauseCount: number;
   longestPauseSec: number;
   totalPauseSec: number;
-  stuckLoops: StuckLoop[];
+  /** Legacy: absent in early sessions. */
+  stuckLoops?: StuckLoop[];
 }
 
 export interface OutlineNotes {
@@ -109,12 +123,16 @@ export interface OutlineNotes {
   closing: string;
 }
 
-export interface Session {
-  id: string;
-  date: string;
-  mode: Mode;
+/** A practice attempt as submitted by the client; the server adds `id` and `date`. */
+export interface NewSession {
+  mode: PracticeMode;
   topic: string;
   transcript: string;
   metrics: FluencyMetrics;
   analysis: AnalysisResult;
+}
+
+export interface Session extends NewSession {
+  id: string;
+  date: string;
 }

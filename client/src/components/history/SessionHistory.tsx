@@ -1,26 +1,30 @@
 import { useEffect, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { getSessions } from '../lib/api';
-import type { Session } from '../types';
-import AnalysisReport from './AnalysisReport';
+import { describeError, getSessions } from '../../lib/api';
+import type { Session } from '../../types';
+import AnalysisReport from '../report/AnalysisReport';
 import Insights from './Insights';
 
 interface SessionHistoryProps {
   onRetry: (session: Session) => void;
 }
 
+/** Past attempts: weak-point insights, overall score trend, and each session's full report. */
 export default function SessionHistory({ onRetry }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     getSessions()
       .then(setSessions)
+      .catch((err) => setError(describeError(err)))
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <p className="text-sm text-gray-500">Loading history…</p>;
+  if (error) return <p className="text-sm text-red-400">Could not load your history: {error}</p>;
   if (sessions.length === 0) return <p className="text-sm text-gray-500">No sessions yet — go practice something first.</p>;
 
   const chartData = sessions

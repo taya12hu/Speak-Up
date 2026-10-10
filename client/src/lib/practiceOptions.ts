@@ -1,3 +1,6 @@
+import type { Difficulty } from '../types';
+
+/** Answer-structuring frameworks taught in Interview Prep. Ids must match INTERVIEW_FRAMEWORKS in server/src/prompts.js. */
 export interface Framework {
   id: 'STAR' | 'PREP' | 'PPF' | 'MECE';
   name: string;
@@ -50,6 +53,7 @@ export const FRAMEWORKS: Framework[] = [
   },
 ];
 
+/** Topic categories for Random Topic mode. Ids must match TOPIC_CATEGORIES in server/src/prompts.js. */
 export const CATEGORIES = [
   { id: 'general', label: 'General', description: 'Everyday impromptu topics' },
   { id: 'opinion', label: 'Opinion / Persuasion', description: 'Argue a stance, defend a take' },
@@ -58,4 +62,4 @@ export const CATEGORIES = [
   { id: 'storytelling', label: 'Storytelling', description: 'Narrate a personal experience' },
 ] as const;
 
-export const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Random'] as const;
+export const DIFFICULTIES: readonly Difficulty[] = ['Easy', 'Medium', 'Hard', 'Random'];

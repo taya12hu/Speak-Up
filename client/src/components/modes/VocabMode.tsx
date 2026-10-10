@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { generateVocab } from '../lib/api';
-import type { VocabEntry } from '../types';
-import PracticeFlow from './PracticeFlow';
+import { describeError, generateVocab } from '../../lib/api';
+import type { VocabEntry } from '../../types';
+import PracticeFlow from '../practice/PracticeFlow';
 
 export default function VocabMode() {
   const [entry, setEntry] = useState<VocabEntry | null>(null);
   const [loading, setLoading] = useState(false);
   const [practicing, setPracticing] = useState(false);
+  const [error, setError] = useState('');
 
   const next = async () => {
     setLoading(true);
     setPracticing(false);
+    setError('');
     try {
       setEntry(await generateVocab());
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
@@ -37,6 +41,8 @@ export default function VocabMode() {
       >
         {loading ? 'Loading…' : entry ? 'Next word' : 'Get a word'}
       </button>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {entry && (
         <div className="w-full max-w-xl rounded-xl border border-gray-800 bg-gray-900/50 p-6 text-left">
