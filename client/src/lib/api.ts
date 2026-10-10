@@ -75,6 +75,15 @@ export function getSessions(): Promise<Session[]> {
   return request('/sessions');
 }
 
+export interface HealthStatus {
+  gemini: { configured: boolean };
+  whisper: { binary: boolean; model: boolean };
+}
+
+export function getHealth(): Promise<HealthStatus> {
+  return request('/health');
+}
+
 /** Message to show the user for any thrown value. */
 export function describeError(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong.';
