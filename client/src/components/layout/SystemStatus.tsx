@@ -8,6 +8,7 @@ function evaluate(health: HealthStatus): State {
     !health.gemini.configured && 'Gemini API key is not set',
     !health.whisper.binary && 'whisper.cpp binary not found',
     !health.whisper.model && 'whisper model not found',
+    health.auth?.configured === false && 'Supabase is not configured on the server',
   ].filter((p): p is string => Boolean(p));
   return problems.length ? { kind: 'degraded', problems } : { kind: 'ready' };
 }
@@ -36,7 +37,7 @@ export default function SystemStatus() {
       : state.kind === 'offline'
         ? 'Start the API with `npm run dev` from the repository root.'
         : state.kind === 'ready'
-          ? 'Gemini and whisper.cpp are configured.'
+          ? 'Gemini, whisper.cpp and Supabase are configured.'
           : undefined;
 
   return (

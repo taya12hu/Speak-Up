@@ -1,5 +1,6 @@
 import { BookOpen, Briefcase, History, Mic, Shuffle } from 'lucide-react';
 import type { Tab } from '../../types';
+import AccountMenu from './AccountMenu';
 import SystemStatus from './SystemStatus';
 
 const TABS: { id: Tab; label: string; shortLabel: string; Icon: typeof Mic }[] = [
@@ -18,13 +19,13 @@ export default function AppHeader({ activeTab, onSelect }: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur supports-[backdrop-filter]:bg-surface/70">
       <div className="mx-auto flex h-16 max-w-5xl items-center gap-6 px-4 sm:px-6">
-        <div className="flex items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-fg shadow-sm">
             <Mic className="size-4" aria-hidden="true" />
           </span>
-          <div className="leading-tight">
+          <div className="leading-tight whitespace-nowrap">
             <p className="text-sm font-semibold text-fg">Speak Up</p>
-            <p className="hidden text-xs text-subtle sm:block">Speaking practice</p>
+            <p className="hidden text-xs text-subtle xl:block">Speaking practice</p>
           </div>
         </div>
 
@@ -32,8 +33,9 @@ export default function AppHeader({ activeTab, onSelect }: AppHeaderProps) {
           <TabList activeTab={activeTab} onSelect={onSelect} />
         </nav>
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
           <SystemStatus />
+          <AccountMenu />
         </div>
       </div>
 
