@@ -145,4 +145,21 @@ Each entry records a significant choice, the alternatives that were considered, 
 
 **Decision.** `SessionHistory` is loaded with `React.lazy`.
 
-**Why.** Recharts accounted for most of a 571 kB bundle, which triggered Vite's chunk-size warning, and is only needed on one tab. The initial bundle is now ~222 kB and the History chunk ~351 kB. That is one `Suspense` boundary, with no other build configuration.
+**Why.** Recharts accounted for most of a 571 kB bundle, which triggered Vite's chunk-size warning, and is only needed on one tab. That is one `Suspense` boundary, with no other build configuration. After the UI redesign (#14) the initial bundle is ~251 kB (78 kB gzipped) and the History chunk ~356 kB.
+
+## 14. Semantic design tokens and in-house UI primitives
+
+**Decision.**
+- Colours are defined once in `index.css` as semantic CSS variables (`surface`, `muted`, `accent`, `danger`…), with light and dark values chosen by `prefers-color-scheme`, and exposed to Tailwind through `@theme inline`.
+- Screens are composed from about ten small components in `components/ui/`.
+- Icons come from `lucide-react`.
+
+**Alternatives.** A component library such as MUI, Chakra or shadcn/ui; keeping per-component Tailwind colour classes, as the original did.
+
+**Why.**
+- The original UI repeated colour and spacing class strings in every component and was dark-only.
+- Semantic tokens give one place to change the look, and make light and dark mode free for every component, the Recharts chart included (via `var(--accent)` and similar).
+- A full component library would add a far larger dependency and styling system than about ten primitives warrant.
+- `lucide-react` is tree-shaken, so only the ~35 icons used ship.
+
+**Trade-off.** The primitives are hand-maintained and cover only what this app needs. There is no theme toggle; the theme follows the OS setting.

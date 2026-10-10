@@ -35,15 +35,18 @@ A React single-page app with no router: the four tabs are local state in `App.ts
 | Module | Responsibility |
 | --- | --- |
 | `App.tsx` | Tab shell. Holds the "retry a past session" state and lazy-loads History, which keeps Recharts out of the initial bundle. |
+| `components/layout/*` | `AppHeader` (navigation: a 4-column bar on phones) and `SystemStatus`, a readiness indicator backed by `GET /api/health` that names any missing setup step in its tooltip. |
+| `components/ui/*` | Small presentational primitives (Button, Card, Alert, Field/Select/TextInput, Badge, EmptyState, PageHeader, Spinner) that every screen is built from. |
+| `index.css` | Design tokens: semantic colours (`canvas`, `surface`, `line`, `fg`, `muted`, `accent`, `success`/`warning`/`danger`…) defined once for light and dark, following the OS preference. |
 | `components/modes/*` | Entry screens for each mode. Each one fetches its practice content (topics, an interview question, or a vocab word), then hands a topic to `PracticeFlow`. |
 | `components/practice/PracticeFlow.tsx` | State machine for one attempt: `prep → practice → transcribing → analyzing → report`, or `error` (which can retry back to `practice`). It orchestrates the API calls and saves the result. |
 | `components/practice/Recorder.tsx` | `MediaRecorder` capture. Releases the microphone on stop and on unmount, then hands back a WAV via `lib/wavEncoder`. |
-| `components/practice/Timer.tsx`, `PrepTimer.tsx`, `ProgressRing.tsx` | The speaking timer (a pacing aid only), the prep countdown with outline notes, and the shared ring visual. |
-| `components/report/*` | `AnalysisReport` renders one attempt; `SessionComparison` shows score deltas and transcripts against a previous attempt. |
-| `components/history/*` | Session list, trend chart, and `Insights` (weak points). |
+| `components/practice/Timer.tsx`, `PrepTimer.tsx`, `ProgressRing.tsx`, `StageStepper.tsx` | The speaking timer (a pacing aid only), the prep countdown with outline notes, the shared ring visual, and the Prepare → Speak → Analyse → Review progress indicator. |
+| `components/report/*` | `AnalysisReport` renders one attempt; `ScoreDisplay` provides the overall gauge, dimension bars and score pills; `SessionComparison` shows score deltas and transcripts against a previous attempt. |
+| `components/history/*` | Headline stats, trend chart, `Insights` (focus areas), and the expandable session list. |
 | `lib/wavEncoder.ts` | Decodes the browser recording (WebM/Opus or similar), downmixes and resamples to 16 kHz mono with `OfflineAudioContext`, and encodes 16-bit PCM WAV. |
 | `lib/fluency.ts` | Deterministic metrics from the transcript and segment timestamps. |
-| `lib/scores.ts`, `lib/insights.ts` | Score dimensions and labels, attempt comparison, and weak-point aggregation. |
+| `lib/scores.ts`, `lib/insights.ts` | Score dimensions, score bands (strong / developing / needs work), attempt comparison, history stats, and weak-point aggregation. |
 | `lib/api.ts` | Typed `fetch` wrapper. Converts server `{ error }` bodies and network failures into `ApiError` with a user-facing message. |
 
 ### Server (`server/`)

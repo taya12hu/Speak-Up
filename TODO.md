@@ -31,7 +31,15 @@ Status of the project after the October 2026 refactor. An item is listed under *
 - [x] **Client components grouped by flow.** Pure logic moved into `lib/`: score tables that were duplicated three times are now in `scores.ts`, Insights logic is in `insights.ts`, and the duplicated timer SVG is the shared `ProgressRing`.
 - [x] **Types made honest:** a `PracticeMode`/`Tab` split, and legacy session fields marked optional. *Verified by rendering a real legacy session in History.*
 - [x] **Dead code and template leftovers removed.**
-- [x] **History lazy-loaded.** *Build verified: the main chunk dropped from 571 kB to 222 kB and the chunk-size warning is gone.*
+- [x] **History lazy-loaded.** *Build verified: the main chunk dropped from 571 kB to 222 kB (251 kB after the UI redesign) and the chunk-size warning is gone.*
+- [x] **UI redesign:**
+  - semantic light/dark design tokens and shared UI primitives;
+  - an app header with a readiness indicator;
+  - labelled form fields;
+  - a step indicator and recording timer;
+  - a redesigned report and History screen.
+
+  *Verified in the browser on every screen up to the microphone prompt: desktop dark mode, and light mode at phone width (375 px) with no horizontal overflow.*
 - [x] **Tests added:**
   - server: 57 tests, including a real whisper.cpp integration test;
   - client: 28 tests;
@@ -70,4 +78,7 @@ Nothing is currently in progress.
 - [ ] **Orphaned uploads in `data/tmp/`**, left if the process is killed mid-transcription, are never swept at startup.
 - [ ] **The `gemini-flash-lite-latest` alias can change behaviour without notice** (it already has once). Consider pinning a concrete model in `GEMINI_MODEL`.
 - [ ] **No code formatter** (Prettier or similar) is configured; style is consistent by convention only.
-- [ ] **Accessibility is only partial:** ARIA labels on the recorder, timers, alerts and navigation, but no full audit (keyboard flow, contrast, screen reader).
+- [ ] **Accessibility is only partial:**
+  - in place: labelled form fields, ARIA labels on the recorder, timers, meters, alerts, radio groups and navigation, and visible focus rings;
+  - missing: a full audit (keyboard flow, colour contrast in both themes, screen reader).
+- [ ] **No manual theme toggle**: the theme always follows the OS setting.

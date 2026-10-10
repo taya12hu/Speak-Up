@@ -21,10 +21,15 @@ It is built for one person on one machine. There are no accounts and no billing.
   - a concrete alternative for each stuck loop;
   - eight 0–100 scores, plus a weighted overall score computed on the server.
 - **History**:
-  - an overall-score trend chart;
-  - "weak points": the three lowest-averaging dimensions and recurring grammar categories across your last 10 sessions;
+  - headline stats (sessions, average, best, change since the previous attempt) and an overall-score trend chart;
+  - "focus areas": the three lowest-averaging dimensions and recurring grammar categories across your last 10 sessions;
   - a full report for every past attempt;
   - **retry a past topic** with a side-by-side score and transcript comparison.
+- **Interface**:
+  - light and dark themes that follow the system setting;
+  - a responsive layout down to phone width;
+  - a header indicator showing whether Gemini and whisper.cpp are configured;
+  - a step indicator through each attempt (Prepare → Speak → Analyse → Review).
 
 ## Architecture at a glance
 
@@ -52,7 +57,7 @@ The browser records audio and converts it to 16 kHz mono WAV. The server transcr
 
 | Layer | Technology |
 | --- | --- |
-| Client | React 19, TypeScript, Vite 8, Tailwind CSS 4, Recharts |
+| Client | React 19, TypeScript, Vite 8, Tailwind CSS 4 (semantic light/dark design tokens), Recharts, Lucide icons |
 | Server | Node.js (ESM), Express 5, Multer, `@google/genai` |
 | Speech-to-text | whisper.cpp CLI, `ggml-base.en` model |
 | AI analysis | Gemini (`gemini-flash-lite-latest` by default, free tier) |
@@ -166,10 +171,13 @@ React components have no automated tests. They were checked manually; see [TODO.
 │       │   ├── scores.ts        Score dimensions, colors, attempt comparison
 │       │   ├── insights.ts      Weak-point aggregation across sessions
 │       │   └── practiceOptions.ts  Categories, difficulties, interview frameworks
+│       ├── index.css            Design tokens (light/dark semantic colours)
 │       └── components/
+│           ├── layout/          App header, navigation, readiness indicator
+│           ├── ui/              Shared primitives: Button, Card, Alert, Field, Badge, …
 │           ├── modes/           Random Topic, Interview Prep, Vocab entry screens
-│           ├── practice/        PracticeFlow state machine, timers, recorder
-│           ├── report/          AnalysisReport, SessionComparison
+│           ├── practice/        PracticeFlow state machine, stepper, timers, recorder
+│           ├── report/          AnalysisReport, score gauge/bars, SessionComparison
 │           └── history/         SessionHistory, Insights
 ├── server/                      Express API
 │   ├── src/
