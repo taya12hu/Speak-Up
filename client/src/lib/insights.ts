@@ -5,7 +5,7 @@ export const RECENT_WINDOW = 10;
 /** Minimum sessions (and minimum scored values per dimension) before weak points are shown. */
 export const MIN_SESSIONS = 3;
 /** A grammar category must appear in at least this many recent sessions to count as recurring. */
-export const MIN_RECURRING_COUNT = 2;
+const MIN_RECURRING_COUNT = 2;
 
 export interface WeakDimension {
   key: string;

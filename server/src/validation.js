@@ -7,7 +7,7 @@ const fail = (message) => {
   throw new HttpError(400, message);
 };
 
-export function isPlainObject(value) {
+function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
