@@ -1,9 +1,24 @@
+# Dependencies and build output
 node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Secrets and local overrides
 .env
-server/data/sessions.json
-server/data/tmp/
-server/data/audio/
+*.local
+.claude/settings.local.json
+
+# Runtime data: practice history and temporary audio uploads
+server/data/
+
+# whisper.cpp binary and model (large local downloads, see README)
 whisper/bin/
 whisper/models/
-dist/
-.claude/settings.local.json
+
+# Logs and editor/OS files
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
