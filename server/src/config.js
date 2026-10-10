@@ -30,6 +30,8 @@ export const config = Object.freeze({
   whisperBinPath: env.WHISPER_BIN_PATH || path.join(REPO_ROOT, 'whisper', 'bin', whisperExe),
   whisperModelPath: env.WHISPER_MODEL_PATH || path.join(REPO_ROOT, 'whisper', 'models', 'ggml-base.en.bin'),
   whisperTimeoutMs: intFromEnv('WHISPER_TIMEOUT_MS', 5 * 60 * 1000),
+  // Explicit thread count for whisper.cpp; when unset, index.js derives it from the CPU quota.
+  whisperThreads: intFromEnv('WHISPER_THREADS', undefined),
   // Supabase Auth + Postgres. Only the public publishable (or legacy anon) key is needed at
   // runtime: database queries run with each user's own JWT so Row Level Security applies.
   // The service-role key is intentionally not read here (see scripts/ for its only use).

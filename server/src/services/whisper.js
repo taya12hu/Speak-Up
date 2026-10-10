@@ -1,11 +1,13 @@
 import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
 import { access, readFile, unlink } from 'fs/promises';
 import { HttpError } from '../errors.js';
 
 /**
  * Wraps the local whisper.cpp CLI. Returns `transcribeWav(wavPath)` and `checkInstallation()`.
+ * `threads` is passed as `-t`; when omitted, whisper.cpp picks its own default (up to 4).
  */
-export function createWhisper({ binPath, modelPath, timeoutMs }) {
+export function createWhisper({ binPath, modelPath, timeoutMs, threads }) {
   /**
    * Runs whisper.cpp on a 16-bit PCM WAV file and returns { text, segments, durationSec }.
    * Segments are near-word-level because we pass -ml 1 (max line length of 1 word); the
@@ -14,7 +16,7 @@ export function createWhisper({ binPath, modelPath, timeoutMs }) {
   async function transcribeWav(wavPath) {
     const durationSec = wavDurationSec(await readFile(wavPath));
     const outBase = wavPath.replace(/\.wav$/, '');
-    await runWhisper(['-m', modelPath, '-f', wavPath, '-oj', '-of', outBase, '-ml', '1']);
+    await runWhisper(['-m', modelPath, '-f', wavPath, '-oj', '-of', outBase, '-ml', '1', ...(threads ? ['-t', String(threads)] : [])]);
 
     const jsonPath = `${outBase}.json`;
     try {
@@ -56,6 +58,37 @@ export function createWhisper({ binPath, modelPath, timeoutMs }) {
   }
 
   return { transcribeWav, checkInstallation };
+}
+
+/**
+ * Whole CPUs this process may use under a Linux cgroup CPU quota (Docker --cpus, Render plans),
+ * or null when there is no quota or it cannot be read (e.g. on Windows/macOS).
+ *
+ * This matters because whisper.cpp's worker threads spin while waiting: with 4 threads under a
+ * 0.5-CPU quota they burn the quota idling. Measured on a 60 s clip, base.en at 0.5 CPU: 4 threads
+ * 449 s, 1 thread 75 s.
+ */
+export function cpuQuotaThreads(read = (p) => readFileSync(p, 'utf8')) {
+  const tryRead = (p) => {
+    try {
+      return read(p).trim();
+    } catch {
+      return null;
+    }
+  };
+  let quota;
+  let period;
+  const v2 = tryRead('/sys/fs/cgroup/cpu.max'); // cgroup v2: "<quota|max> <period>"
+  if (v2) {
+    [quota, period] = v2.split(/\s+/);
+    if (quota === 'max') return null;
+  } else {
+    quota = tryRead('/sys/fs/cgroup/cpu/cpu.cfs_quota_us'); // cgroup v1: -1 means unlimited
+    period = tryRead('/sys/fs/cgroup/cpu/cpu.cfs_period_us');
+  }
+  const cpus = Number(quota) / Number(period);
+  if (!Number.isFinite(cpus) || cpus <= 0) return null;
+  return Math.max(1, Math.floor(cpus));
 }
 
 /** Reads the sample count from a PCM WAV header to compute duration without needing ffprobe. */
@@ -103,6 +136,9 @@ export function parseWhisperOutput(raw) {
     .map((s) => s.text)
     .join(' ')
     .replace(/\s+/g, ' ')
+    // Smaller models (e.g. tiny.en) emit punctuation as separate one-token segments; re-attach it so
+    // the transcript reads naturally and the client's word count (pace) is not inflated by ". , ?".
+    .replace(/ ([.,!?;:)\]}%]|'(?:s|re|ve|ll|d|m|t)\b|n't\b)/g, '$1')
     .trim();
   return { text, segments };
 }

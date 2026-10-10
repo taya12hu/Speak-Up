@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { HttpError } from '../src/errors.js';
-import { parseWhisperOutput, timeToSec, wavDurationSec } from '../src/services/whisper.js';
+import { cpuQuotaThreads, parseWhisperOutput, timeToSec, wavDurationSec } from '../src/services/whisper.js';
 import { makeWav } from './helpers.js';
 
 describe('wavDurationSec', () => {
@@ -54,6 +54,12 @@ describe('parseWhisperOutput', () => {
     assert.deepEqual(parseWhisperOutput(raw).segments, [{ text: 'hi', start: 62.25, end: 63 }]);
   });
 
+  it('re-attaches punctuation and contractions that small models emit as separate segments', () => {
+    const words = ['I', 'think', 'that', "'s", 'listening', '.', 'Um', ',', 'we', 'do', "n't", 'listen', '?'];
+    const raw = { transcription: words.map((w, i) => ({ text: ` ${w}`, offsets: { from: i * 100, to: i * 100 + 50 } })) };
+    assert.equal(parseWhisperOutput(raw).text, "I think that's listening. Um, we don't listen?");
+  });
+
   it('handles output with no transcription', () => {
     assert.deepEqual(parseWhisperOutput({}), { text: '', segments: [] });
   });
@@ -66,5 +72,35 @@ describe('timeToSec', () => {
 
   it('returns 0 for missing values', () => {
     assert.equal(timeToSec(undefined), 0);
+  });
+});
+
+describe('cpuQuotaThreads', () => {
+  const files = (map) => (p) => {
+    if (p in map) return map[p];
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  };
+
+  it('uses one thread for fractional quotas (Render Free 0.1, Starter 0.5)', () => {
+    assert.equal(cpuQuotaThreads(files({ '/sys/fs/cgroup/cpu.max': '10000 100000\n' })), 1);
+    assert.equal(cpuQuotaThreads(files({ '/sys/fs/cgroup/cpu.max': '50000 100000' })), 1);
+  });
+
+  it('rounds whole-CPU quotas down (cgroup v2)', () => {
+    assert.equal(cpuQuotaThreads(files({ '/sys/fs/cgroup/cpu.max': '200000 100000' })), 2);
+    assert.equal(cpuQuotaThreads(files({ '/sys/fs/cgroup/cpu.max': '150000 100000' })), 1);
+  });
+
+  it('returns null when there is no quota', () => {
+    assert.equal(cpuQuotaThreads(files({ '/sys/fs/cgroup/cpu.max': 'max 100000' })), null);
+    assert.equal(cpuQuotaThreads(files({ '/sys/fs/cgroup/cpu/cpu.cfs_quota_us': '-1', '/sys/fs/cgroup/cpu/cpu.cfs_period_us': '100000' })), null);
+  });
+
+  it('reads cgroup v1 quota files', () => {
+    assert.equal(cpuQuotaThreads(files({ '/sys/fs/cgroup/cpu/cpu.cfs_quota_us': '400000', '/sys/fs/cgroup/cpu/cpu.cfs_period_us': '100000' })), 4);
+  });
+
+  it('returns null when cgroup files are absent (Windows, macOS)', () => {
+    assert.equal(cpuQuotaThreads(files({})), null);
   });
 });

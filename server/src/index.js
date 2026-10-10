@@ -5,16 +5,19 @@ import { config } from './config.js';
 import { createSupabaseTokenVerifier } from './services/auth.js';
 import { createGemini } from './services/gemini.js';
 import { createSessionRepository } from './services/sessionRepository.js';
-import { createWhisper } from './services/whisper.js';
+import { cpuQuotaThreads, createWhisper } from './services/whisper.js';
 
 const tmpDir = path.join(config.dataDir, 'tmp');
 await mkdir(tmpDir, { recursive: true });
 
 const { askJSON } = createGemini({ apiKey: config.geminiApiKey, model: config.geminiModel });
+// Under a CPU quota (containers, Render), match whisper's threads to the CPUs actually granted.
+const whisperThreads = config.whisperThreads ?? cpuQuotaThreads() ?? undefined;
 const whisper = createWhisper({
   binPath: config.whisperBinPath,
   modelPath: config.whisperModelPath,
   timeoutMs: config.whisperTimeoutMs,
+  threads: whisperThreads,
 });
 const sessionRepository = createSessionRepository(config.supabase);
 const authConfigured = Boolean(config.supabase.url && config.supabase.publishableKey);
@@ -45,4 +48,5 @@ app.listen(config.port, config.host, (err) => {
     process.exit(1);
   }
   console.log(`Server listening on http://${config.host}:${config.port} (model: ${config.geminiModel})`);
+  console.log(`whisper.cpp threads: ${whisperThreads ?? 'whisper default'}`);
 });
