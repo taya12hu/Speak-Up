@@ -13,7 +13,8 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "lint": "oxlint --deny-warnings"
+    "lint": "oxlint --deny-warnings",
+    "import:legacy": "node scripts/import-legacy-sessions.js"
   },
   "dependencies": {
     "@google/genai": "^2.11.0",
