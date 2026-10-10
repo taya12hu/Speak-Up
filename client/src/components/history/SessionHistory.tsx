@@ -1,7 +1,7 @@
-import { ChevronDown, History as HistoryIcon, RotateCcw } from 'lucide-react';
+import { ChevronDown, History as HistoryIcon, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { describeError, getSessions } from '../../lib/api';
+import { deleteSession, describeError, getSessions } from '../../lib/api';
 import { computeHistoryStats } from '../../lib/insights';
 import { formatDelta } from '../../lib/scores';
 import type { PracticeMode, Session } from '../../types';
@@ -163,10 +163,17 @@ export default function SessionHistory({ onRetry }: SessionHistoryProps) {
                   </button>
                   {open && (
                     <div className="flex flex-col gap-6 border-t border-line bg-canvas/60 p-4 sm:p-6">
-                      <div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <Button variant="secondary" size="sm" icon={<RotateCcw className="size-4" />} onClick={() => onRetry(s)}>
                           Practise this topic again
                         </Button>
+                        <DeleteSessionButton
+                          sessionId={s.id}
+                          onDeleted={() => {
+                            setExpanded(null);
+                            setSessions((current) => current.filter((x) => x.id !== s.id));
+                          }}
+                        />
                       </div>
                       <AnalysisReport transcript={s.transcript} metrics={s.metrics} analysis={s.analysis} />
                     </div>
@@ -177,6 +184,49 @@ export default function SessionHistory({ onRetry }: SessionHistoryProps) {
           })}
         </ul>
       </section>
+    </div>
+  );
+}
+
+/** Two-step delete: the first click asks for confirmation, the second deletes permanently. */
+function DeleteSessionButton({ sessionId, onDeleted }: { sessionId: string; onDeleted: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!confirming) {
+    return (
+      <Button variant="ghost" size="sm" icon={<Trash2 className="size-4" />} onClick={() => setConfirming(true)}>
+        Delete
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {error ? <span className="text-sm text-danger">{error}</span> : <span className="text-sm text-muted">Delete this session permanently?</span>}
+      <Button variant="secondary" size="sm" onClick={() => setConfirming(false)} disabled={busy}>
+        Cancel
+      </Button>
+      <Button
+        size="sm"
+        loading={busy}
+        icon={<Trash2 className="size-4" />}
+        className="bg-danger hover:bg-danger hover:opacity-90"
+        onClick={async () => {
+          setBusy(true);
+          setError('');
+          try {
+            await deleteSession(sessionId);
+            onDeleted();
+          } catch (err) {
+            setError(describeError(err));
+            setBusy(false);
+          }
+        }}
+      >
+        Delete
+      </Button>
     </div>
   );
 }
