@@ -1,0 +1,18 @@
+# Keep the build context small and free of secrets and local data.
+.git
+**/node_modules
+client/dist
+coverage
+whisper
+server/data
+server/test
+server/scripts
+supabase
+**/.env
+**/.env.*
+!**/.env.example
+**/*.local
+*.log
+.claude
+.vscode
+.idea

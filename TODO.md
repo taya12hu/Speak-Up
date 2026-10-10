@@ -72,6 +72,19 @@ Verified against the owner's real Supabase project (ES256 signing keys) with thr
 - [x] **Explicit-owner legacy import script.** *Unit tests:* planning and validation. *Locally:* all 10 real legacy records plan cleanly. **Not yet run against the database** (see below).
 - [x] **Temporary audio is unchanged:** deleted per request, with distinct files for concurrent uploads (HTTP test). No audio is stored permanently.
 
+### Deployment (October 2026)
+
+- [x] **Production Dockerfile:**
+  - static whisper.cpp `v1.9.4` build;
+  - checksum-pinned model (`base.en` or `tiny.en`);
+  - client built with public `VITE_*` build args;
+  - production-only server dependencies, running as a non-root user;
+  - `.dockerignore` keeps secrets and local data out of the build.
+
+  *Verified locally:* the image builds and serves the client and API on `0.0.0.0`; `/api/health` is fully configured, private routes return 401, there are no `.env` files in the image, and the model-step hash checks pass and fail correctly.
+- [x] **whisper threads match the CPU quota.** *Measured* at 0.5 CPU on a 60 s clip: 449 s with 4 threads → 75 s with 1. *Unit tests* cover cgroup v1/v2 parsing. *End to end* at 0.1 CPU and 512 MB: the server detected 1 thread itself and transcribed 60 s of speech with `tiny.en` in 176 s.
+- [x] **Punctuation re-attached in transcripts.** `tiny.en` emits punctuation as separate tokens, which inflated the word count and pace. *Unit test, plus a check against real `tiny.en` output.*
+
 ## In progress
 
 Nothing is currently in progress.
@@ -103,6 +116,8 @@ Nothing is currently in progress.
 - [ ] **No per-user rate limiting.** A signed-in user can call the AI routes as fast as Gemini's quota allows.
 - [ ] **Signed-in users can write to their own rows directly** via PostgREST, using the public key and their token, bypassing Express validation. RLS and the check constraints still confine this to well-formed rows in their *own* history.
 - [ ] **Supabase's default email sender is heavily rate-limited** and only for development. Configure custom SMTP before real users sign up.
+- [ ] **Transcription on Render's Free plan takes ~3 minutes per minute of speech** (`tiny.en`), and the service sleeps when idle. The UI shows a spinner but no estimate. Moving to Starter brings this to ~75 s per minute with the more accurate `base.en`.
+- [ ] **Transcription is a single synchronous HTTP request.** Long answers on slow plans keep the connection open for minutes. A job queue with polling would be more robust.
 - [ ] **Prep time is fixed at 60 s**, and the speaking timer does not stop the recording when it expires (by design; could be an option).
 
 ## Pending: technical debt

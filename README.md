@@ -154,6 +154,40 @@ How a practice attempt flows:
 | `npm run build` | Type-checks the client and builds it into `client/dist/`; the `VITE_*` values are baked in at build time. |
 | `npm start` | Runs the API. If `client/dist/` exists it also serves the built app, at **http://localhost:4000**. |
 
+## Deploying (Render)
+
+The repository includes a multi-stage [`Dockerfile`](Dockerfile). It compiles whisper.cpp (pinned to `v1.9.4`), downloads the `base.en` model and verifies its SHA-256, builds the client, and runs the API as a non-root user. Express serves the built client and the API from one origin, so no CORS setup is needed.
+
+1. In Render, create a **Web Service** from this repository with the **Docker** runtime.
+2. Set these environment variables in the service settings:
+   - **Runtime:** `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`.
+   - **Build time** (baked into the client bundle; Render passes them to the Docker build automatically): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`.
+   - Do **not** add `SUPABASE_SERVICE_ROLE_KEY`; the running app never needs it.
+3. In Supabase (Authentication → URL Configuration), add the service URL (e.g. `https://speak-up.onrender.com`) to the **Site URL / Redirect URLs**, so confirmation emails link back to the deployed app.
+4. Deploy. Render sets `PORT`; the image already binds to `0.0.0.0`. `GET /api/health` should report every component as configured.
+
+**Choosing a plan.** Transcription is CPU-bound. The server reads the container's CPU quota and runs whisper.cpp with a matching thread count (override with `WHISPER_THREADS`). With more threads than granted CPUs, whisper's spinning workers burn the quota: 449 s instead of 75 s in the measurements below. Times for 60 s of speech, with the CPU limits Render applies:
+
+| Plan (CPU) | Model | Time per minute of speech | Settings |
+| --- | --- | --- | --- |
+| Free (0.1) | `tiny.en` | ~3 min | `WHISPER_MODEL=tiny.en`, `WHISPER_TIMEOUT_MS=900000` |
+| Free (0.1) | `base.en` | ~11 min | not usable |
+| Starter (0.5) | `base.en` | ~75 s | defaults |
+
+The model is chosen at build time with the `WHISPER_MODEL` environment variable (`base.en` or `tiny.en`; each is checksum-pinned in the Dockerfile). `tiny.en` is less accurate.
+
+The Free plan also sleeps after 15 minutes without traffic, and the first request after that takes about a minute.
+
+To try the image locally:
+
+```bash
+docker build -t speak-up --build-arg VITE_SUPABASE_URL=https://<ref>.supabase.co --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=<publishable key> .
+```
+
+```bash
+docker run --rm -p 4000:4000 --env-file server/.env speak-up
+```
+
 ## Environment variables
 
 **Server** (`server/.env`):
@@ -169,6 +203,8 @@ How a practice attempt flows:
 | `GEMINI_MODEL` | `gemini-flash-lite-latest` | Model alias used for every call. |
 | `WHISPER_BIN_PATH` / `WHISPER_MODEL_PATH` | `<repo>/whisper/...` | whisper.cpp CLI and model. |
 | `WHISPER_TIMEOUT_MS` | `300000` | Kills a transcription that takes longer than this. |
+| `WHISPER_THREADS` | from CPU quota | whisper.cpp thread count. By default it is derived from the Linux cgroup CPU quota (containers, Render); with no quota, whisper picks its own default. |
+| `WHISPER_MODEL` | `base.en` | **Docker build only:** which checksum-pinned model to bake into the image (`base.en` or `tiny.en`). |
 | `DATA_DIR` | `server/data` | Where temporary uploads are staged during transcription. |
 
 **Client** (`client/.env.local`, public values only):
