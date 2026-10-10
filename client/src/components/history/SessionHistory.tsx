@@ -1,15 +1,30 @@
-import { useEffect, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { ChevronDown, History as HistoryIcon, RotateCcw } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { describeError, getSessions } from '../../lib/api';
-import type { Session } from '../../types';
+import { computeHistoryStats } from '../../lib/insights';
+import { formatDelta } from '../../lib/scores';
+import type { PracticeMode, Session } from '../../types';
 import AnalysisReport from '../report/AnalysisReport';
+import { ScorePill } from '../report/ScoreDisplay';
+import Alert from '../ui/Alert';
+import Badge from '../ui/Badge';
+import Button from '../ui/Button';
+import { Card, CardHeader } from '../ui/Card';
+import EmptyState from '../ui/EmptyState';
+import PageHeader from '../ui/PageHeader';
+import Spinner from '../ui/Spinner';
 import Insights from './Insights';
 
 interface SessionHistoryProps {
   onRetry: (session: Session) => void;
 }
 
-/** Past attempts: weak-point insights, overall score trend, and each session's full report. */
+const MODE_LABELS: Record<PracticeMode, string> = { random: 'Random topic', interview: 'Interview', vocab: 'Vocabulary' };
+
+const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/** Past attempts: headline stats, weak-point insights, overall score trend, and each session's full report. */
 export default function SessionHistory({ onRetry }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,61 +38,155 @@ export default function SessionHistory({ onRetry }: SessionHistoryProps) {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-sm text-gray-500">Loading history…</p>;
-  if (error) return <p className="text-sm text-red-400">Could not load your history: {error}</p>;
-  if (sessions.length === 0) return <p className="text-sm text-gray-500">No sessions yet — go practice something first.</p>;
+  const header = <PageHeader title="History" description="Track your progress and revisit past feedback." />;
+
+  if (loading) {
+    return (
+      <div>
+        {header}
+        <div className="flex items-center justify-center gap-2 py-24 text-sm text-muted">
+          <Spinner className="size-4" /> Loading history…
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        {header}
+        <Alert>Could not load your history: {error}</Alert>
+      </div>
+    );
+  }
+
+  const stats = computeHistoryStats(sessions);
+  if (!stats) {
+    return (
+      <div>
+        {header}
+        <EmptyState
+          icon={<HistoryIcon className="size-5" />}
+          title="No sessions yet"
+          description="Complete a practice attempt and your scores and feedback will appear here."
+        />
+      </div>
+    );
+  }
 
   const chartData = sessions
     .slice()
     .reverse()
-    .map((s, i) => ({ index: i + 1, overall: s.analysis.scores.overall, date: new Date(s.date).toLocaleDateString() }));
+    .map((s, i) => ({ attempt: i + 1, overall: s.analysis.scores.overall, date: new Date(s.date).toLocaleDateString() }));
 
   return (
-    <div className="flex w-full max-w-2xl flex-col gap-6">
-      <Insights sessions={sessions} />
+    <div className="flex flex-col gap-6">
+      {header}
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-        <h3 className="mb-3 text-lg font-medium text-gray-100">Score over time</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis dataKey="index" stroke="#6b7280" fontSize={12} />
-            <YAxis domain={[0, 100]} stroke="#6b7280" fontSize={12} />
-            <Tooltip
-              contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8 }}
-              labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ''}
-            />
-            <Line type="monotone" dataKey="overall" stroke="#a855f7" strokeWidth={2} dot={{ r: 3 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Sessions" value={stats.count} />
+        <StatTile label="Average score" value={stats.average} />
+        <StatTile label="Best score" value={stats.best} />
+        <StatTile
+          label="Last attempt"
+          value={sessions[0].analysis.scores.overall}
+          detail={
+            stats.lastChange !== null && (
+              <span className={stats.lastChange > 0 ? 'text-success' : stats.lastChange < 0 ? 'text-danger' : 'text-subtle'}>
+                {formatDelta(stats.lastChange)} vs previous
+              </span>
+            )
+          }
+        />
+      </dl>
 
-      <div className="flex flex-col gap-2">
-        {sessions.map((s) => (
-          <div key={s.id} className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
-            <button className="flex w-full items-center justify-between text-left" onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
-              <div>
-                <p className="text-sm text-gray-200">{s.topic}</p>
-                <p className="text-xs text-gray-500">
-                  {new Date(s.date).toLocaleString()} · {s.mode}
-                </p>
-              </div>
-              <span className="text-lg font-semibold text-violet-400">{s.analysis.scores.overall}</span>
-            </button>
-            {expanded === s.id && (
-              <div className="mt-4 flex flex-col items-center gap-4 border-t border-gray-800 pt-4">
-                <button
-                  onClick={() => onRetry(s)}
-                  className="rounded-md border border-violet-700 px-4 py-1.5 text-sm text-violet-300 hover:bg-violet-950/40"
-                >
-                  Practice this topic again
-                </button>
-                <AnalysisReport transcript={s.transcript} metrics={s.metrics} analysis={s.analysis} />
-              </div>
-            )}
+      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+        <Card as="section" className="p-6">
+          <CardHeader title="Overall score over time" description="Each point is one practice attempt, oldest to newest." />
+          <div className="mt-4 h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+                <defs>
+                  <linearGradient id="scoreFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} stroke="var(--line)" />
+                <XAxis dataKey="attempt" tickLine={false} axisLine={false} tick={{ fill: 'var(--subtle)', fontSize: 12 }} />
+                <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickLine={false} axisLine={false} tick={{ fill: 'var(--subtle)', fontSize: 12 }} />
+                <Tooltip
+                  cursor={{ stroke: 'var(--line-strong)' }}
+                  contentStyle={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 8, fontSize: 12, color: 'var(--fg)' }}
+                  labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ''}
+                  formatter={(value) => [value, 'Overall score']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="overall"
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                  fill="url(#scoreFill)"
+                  dot={{ r: 3, fill: 'var(--surface)', stroke: 'var(--accent)', strokeWidth: 2 }}
+                  activeDot={{ r: 5 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
-        ))}
+        </Card>
+        <Insights sessions={sessions} />
       </div>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-fg">All sessions</h2>
+        <ul className="flex flex-col gap-2">
+          {sessions.map((s) => {
+            const open = expanded === s.id;
+            return (
+              <li key={s.id}>
+                <Card className="overflow-hidden">
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setExpanded(open ? null : s.id)}
+                    className="flex w-full items-center gap-4 px-4 py-3.5 text-left transition hover:bg-surface-2/60"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-fg">{s.topic}</p>
+                      <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle">
+                        <Badge>{MODE_LABELS[s.mode] ?? s.mode}</Badge>
+                        {dateFormat.format(new Date(s.date))}
+                      </p>
+                    </div>
+                    <ScorePill score={s.analysis.scores.overall} />
+                    <ChevronDown className={`size-4 shrink-0 text-subtle transition ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+                  </button>
+                  {open && (
+                    <div className="flex flex-col gap-6 border-t border-line bg-canvas/60 p-4 sm:p-6">
+                      <div>
+                        <Button variant="secondary" size="sm" icon={<RotateCcw className="size-4" />} onClick={() => onRetry(s)}>
+                          Practise this topic again
+                        </Button>
+                      </div>
+                      <AnalysisReport transcript={s.transcript} metrics={s.metrics} analysis={s.analysis} />
+                    </div>
+                  )}
+                </Card>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
     </div>
+  );
+}
+
+function StatTile({ label, value, detail }: { label: string; value: number; detail?: ReactNode }) {
+  return (
+    <Card className="p-4">
+      <dt className="text-xs font-medium text-subtle">{label}</dt>
+      <dd className="mt-1 text-2xl font-semibold tracking-tight text-fg tabular-nums">{value}</dd>
+      {detail && <dd className="mt-0.5 text-xs">{detail}</dd>}
+    </Card>
   );
 }

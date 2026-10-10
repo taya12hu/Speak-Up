@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GrammarCategory, Scores, Session } from '../types';
-import { computeInsights, RECENT_WINDOW } from './insights';
+import { computeHistoryStats, computeInsights, RECENT_WINDOW } from './insights';
 
 const baseScores: Scores = {
   grammar: 80,
@@ -33,6 +33,21 @@ function session(scores: Partial<Scores> = {}, categories: (GrammarCategory | un
     },
   };
 }
+
+describe('computeHistoryStats', () => {
+  it('returns null with no sessions', () => {
+    expect(computeHistoryStats([])).toBeNull();
+  });
+
+  it('summarises overall scores, newest first', () => {
+    const sessions = [session({ overall: 70 }), session({ overall: 81 }), session({ overall: 60 })];
+    expect(computeHistoryStats(sessions)).toEqual({ count: 3, average: 70, best: 81, lastChange: -11 });
+  });
+
+  it('has no change figure for a single session', () => {
+    expect(computeHistoryStats([session({ overall: 50 })])?.lastChange).toBeNull();
+  });
+});
 
 describe('computeInsights', () => {
   it('needs at least three sessions', () => {

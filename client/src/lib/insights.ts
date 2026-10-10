@@ -24,6 +24,26 @@ export interface Insights {
   recurringCategories: RecurringCategory[];
 }
 
+export interface HistoryStats {
+  count: number;
+  average: number;
+  best: number;
+  /** Latest overall score minus the one before it; null with fewer than two sessions. */
+  lastChange: number | null;
+}
+
+/** Headline numbers for the History page. @param sessions newest first */
+export function computeHistoryStats(sessions: Session[]): HistoryStats | null {
+  if (sessions.length === 0) return null;
+  const overall = sessions.map((s) => s.analysis.scores.overall);
+  return {
+    count: sessions.length,
+    average: Math.round(overall.reduce((a, b) => a + b, 0) / overall.length),
+    best: Math.max(...overall),
+    lastChange: overall.length > 1 ? overall[0] - overall[1] : null,
+  };
+}
+
 /**
  * Weak points across the most recent sessions: the three lowest-averaging score dimensions and
  * the grammar categories that keep coming back. Returns null when there is too little data.

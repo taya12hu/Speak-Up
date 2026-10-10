@@ -1,48 +1,71 @@
-import { computeInsights } from '../../lib/insights';
+import { TrendingDown } from 'lucide-react';
+import { computeInsights, MIN_SESSIONS } from '../../lib/insights';
+import { scoreTone } from '../../lib/scores';
 import type { Session } from '../../types';
+import { Card, CardHeader } from '../ui/Card';
 
 interface InsightsProps {
   /** Newest first. */
   sessions: Session[];
 }
 
-/** Weak-point summary across recent sessions; renders nothing until there is enough history. */
+const TONE_TEXT = { success: 'text-success', warning: 'text-warning', danger: 'text-danger' } as const;
+
+/** Weak-point summary across recent sessions. */
 export default function Insights({ sessions }: InsightsProps) {
   const insights = computeInsights(sessions);
-  if (!insights) return null;
+
+  if (!insights) {
+    return (
+      <Card as="section" className="p-6">
+        <CardHeader icon={<TrendingDown className="size-4" />} title="Focus areas" />
+        <p className="mt-3 text-sm text-muted">
+          Complete at least {MIN_SESSIONS} sessions to see your weakest areas and recurring grammar issues.
+        </p>
+      </Card>
+    );
+  }
+
   const { windowSize, weakest, recurringCategories } = insights;
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-      <h3 className="mb-1 text-lg font-medium text-gray-100">Weak Points</h3>
-      <p className="mb-4 text-xs text-gray-500">Based on your last {windowSize} sessions</p>
+    <Card as="section" className="p-6">
+      <CardHeader icon={<TrendingDown className="size-4" />} title="Focus areas" description={`Based on your last ${windowSize} sessions`} />
 
       {weakest.length > 0 && (
-        <div className="mb-4">
-          <p className="mb-2 text-xs uppercase tracking-wide text-gray-500">Lowest-scoring areas</p>
-          <div className="flex flex-col gap-2">
+        <div className="mt-5">
+          <p className="mb-2 text-xs font-semibold tracking-wide text-subtle uppercase">Lowest-scoring</p>
+          <ul className="flex flex-col gap-2">
             {weakest.map((w) => (
-              <div key={w.key} className="flex items-center justify-between text-sm">
-                <span className="text-gray-300">{w.label}</span>
-                <span className="font-medium text-amber-400">{Math.round(w.avg)} avg</span>
-              </div>
+              <li key={w.key} className="flex items-center justify-between text-sm">
+                <span className="text-fg">{w.label}</span>
+                <span className={`font-semibold tabular-nums ${TONE_TEXT[scoreTone(w.avg)]}`}>{Math.round(w.avg)} avg</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
 
       {recurringCategories.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs uppercase tracking-wide text-gray-500">Recurring grammar issues</p>
-          <div className="flex flex-col gap-1">
+        <div className="mt-5 border-t border-line pt-4">
+          <p className="mb-2 text-xs font-semibold tracking-wide text-subtle uppercase">Recurring grammar issues</p>
+          <ul className="flex flex-col gap-2.5">
             {recurringCategories.map(({ category, sessionCount }) => (
-              <p key={category} className="text-sm text-gray-300">
-                <span className="capitalize text-gray-100">{category}</span> — {sessionCount} of your last {windowSize} sessions
-              </p>
+              <li key={category}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span className="text-fg capitalize">{category}</span>
+                  <span className="text-xs text-subtle tabular-nums">
+                    {sessionCount}/{windowSize} sessions
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+                  <div className="h-full rounded-full bg-warning" style={{ width: `${(sessionCount / windowSize) * 100}%` }} />
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

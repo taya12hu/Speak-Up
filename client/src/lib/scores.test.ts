@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Scores } from '../types';
-import { compareScores, formatDelta, scoreColor } from './scores';
+import { compareScores, formatDelta, scoreTone } from './scores';
 
 const scores = (overrides: Partial<Scores> = {}): Scores => ({
   grammar: 70,
@@ -40,11 +40,13 @@ describe('formatDelta', () => {
   });
 });
 
-describe('scoreColor', () => {
-  it('uses green / amber / red bands at 80 and 60', () => {
-    expect(scoreColor(80)).toBe('bg-emerald-500');
-    expect(scoreColor(79)).toBe('bg-amber-500');
-    expect(scoreColor(60)).toBe('bg-amber-500');
-    expect(scoreColor(59)).toBe('bg-red-500');
+describe('scoreTone', () => {
+  it('bands scores at 80 and 60', () => {
+    expect(scoreTone(100)).toBe('success');
+    expect(scoreTone(80)).toBe('success');
+    expect(scoreTone(79)).toBe('warning');
+    expect(scoreTone(60)).toBe('warning');
+    expect(scoreTone(59)).toBe('danger');
+    expect(scoreTone(0)).toBe('danger');
   });
 });

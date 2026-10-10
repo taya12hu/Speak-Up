@@ -1,5 +1,7 @@
+import { ArrowDownRight, ArrowUpRight, GitCompare, Minus } from 'lucide-react';
 import { compareScores, formatDelta } from '../../lib/scores';
 import type { AnalysisResult, Session } from '../../types';
+import { Card, CardHeader } from '../ui/Card';
 
 interface SessionComparisonProps {
   previous: Session;
@@ -7,52 +9,80 @@ interface SessionComparisonProps {
   currentTranscript: string;
 }
 
-function deltaColor(delta: number) {
-  if (delta > 0) return 'text-emerald-400';
-  if (delta < 0) return 'text-red-400';
-  return 'text-gray-500';
+function deltaClass(delta: number) {
+  if (delta > 0) return 'text-success';
+  if (delta < 0) return 'text-danger';
+  return 'text-subtle';
+}
+
+function DeltaIcon({ delta }: { delta: number }) {
+  const Icon = delta > 0 ? ArrowUpRight : delta < 0 ? ArrowDownRight : Minus;
+  return <Icon className="size-3.5" aria-hidden="true" />;
 }
 
 /** Score-by-score and transcript comparison against an earlier attempt at the same topic. */
 export default function SessionComparison({ previous, currentAnalysis, currentTranscript }: SessionComparisonProps) {
   const rows = compareScores(previous.analysis.scores, currentAnalysis.scores);
-  const overallDelta = rows.find((r) => r.key === 'overall')?.delta ?? 0;
+  const overall = rows.find((r) => r.key === 'overall');
+  const dimensions = rows.filter((r) => r.key !== 'overall');
 
   return (
-    <section className="w-full max-w-2xl rounded-xl border border-violet-900 bg-violet-950/20 p-5 text-left">
-      <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-lg font-medium text-violet-300">Compared to your last attempt</h3>
-        <span className={`text-lg font-bold ${deltaColor(overallDelta)}`}>{formatDelta(overallDelta)}</span>
-      </div>
-      <p className="mb-4 text-xs text-gray-500">Previous attempt: {new Date(previous.date).toLocaleDateString()}</p>
+    <Card as="section" className="border-accent-line p-6">
+      <CardHeader
+        icon={<GitCompare className="size-4" />}
+        title="Compared with your previous attempt"
+        description={`Previous attempt on ${new Date(previous.date).toLocaleDateString()}`}
+        aside={
+          overall && (
+            <div className="text-right">
+              <p className={`flex items-center justify-end gap-1 text-2xl font-semibold tabular-nums ${deltaClass(overall.delta)}`}>
+                <DeltaIcon delta={overall.delta} />
+                {formatDelta(overall.delta)}
+              </p>
+              <p className="text-xs text-subtle tabular-nums">
+                {overall.before} → {overall.after} overall
+              </p>
+            </div>
+          )
+        }
+      />
 
-      <div className="mb-4 flex flex-col gap-1.5">
-        {rows.map((r) => (
-          <div key={r.key} className="flex items-center justify-between text-sm">
-            <span className="text-gray-300">{r.label}</span>
-            <span className="flex items-center gap-2">
-              <span className="text-gray-500">
-                {r.before} → {r.after}
-              </span>
-              <span className={`w-10 text-right font-medium ${deltaColor(r.delta)}`}>{formatDelta(r.delta)}</span>
-            </span>
-          </div>
-        ))}
-      </div>
+      <table className="mt-5 w-full text-sm">
+        <thead>
+          <tr className="border-b border-line text-left text-xs text-subtle">
+            <th scope="col" className="pb-2 font-medium">Dimension</th>
+            <th scope="col" className="pb-2 text-right font-medium">Before</th>
+            <th scope="col" className="pb-2 text-right font-medium">After</th>
+            <th scope="col" className="pb-2 text-right font-medium">Change</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {dimensions.map((r) => (
+            <tr key={r.key}>
+              <th scope="row" className="py-2 text-left font-normal text-fg">{r.label}</th>
+              <td className="py-2 text-right text-muted tabular-nums">{r.before}</td>
+              <td className="py-2 text-right text-fg tabular-nums">{r.after}</td>
+              <td className={`py-2 text-right font-medium tabular-nums ${deltaClass(r.delta)}`}>{formatDelta(r.delta)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-      <details className="text-sm text-gray-400">
-        <summary className="cursor-pointer text-gray-300">Compare transcripts</summary>
-        <div className="mt-3 flex flex-col gap-3">
+      <details className="group mt-5 rounded-lg border border-line">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-fg select-none hover:bg-surface-2">
+          Compare transcripts
+        </summary>
+        <div className="grid gap-4 border-t border-line p-4 md:grid-cols-2">
           <div>
-            <p className="mb-1 text-xs uppercase tracking-wide text-gray-500">Previous attempt</p>
-            <p className="whitespace-pre-wrap rounded-lg bg-gray-800/50 p-3">{previous.transcript}</p>
+            <p className="mb-1.5 text-xs font-semibold tracking-wide text-subtle uppercase">Previous attempt</p>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted">{previous.transcript}</p>
           </div>
           <div>
-            <p className="mb-1 text-xs uppercase tracking-wide text-gray-500">This attempt</p>
-            <p className="whitespace-pre-wrap rounded-lg bg-gray-800/50 p-3">{currentTranscript}</p>
+            <p className="mb-1.5 text-xs font-semibold tracking-wide text-subtle uppercase">This attempt</p>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap text-fg">{currentTranscript}</p>
           </div>
         </div>
       </details>
-    </section>
+    </Card>
   );
 }

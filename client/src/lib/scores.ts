@@ -12,12 +12,20 @@ export const SCORE_DIMENSIONS: { key: Exclude<ScoreKey, 'overall'>; label: strin
   { key: 'confidence', label: 'Confidence' },
 ];
 
-/** Tailwind background class for a score bar. */
-export function scoreColor(score: number): string {
-  if (score >= 80) return 'bg-emerald-500';
-  if (score >= 60) return 'bg-amber-500';
-  return 'bg-red-500';
+export type ScoreTone = 'success' | 'warning' | 'danger';
+
+/** Score band: 80+ strong, 60–79 developing, below 60 needs work. */
+export function scoreTone(score: number): ScoreTone {
+  if (score >= 80) return 'success';
+  if (score >= 60) return 'warning';
+  return 'danger';
 }
+
+export const SCORE_TONE_LABELS: Record<ScoreTone, string> = {
+  success: 'Strong',
+  warning: 'Developing',
+  danger: 'Needs work',
+};
 
 export interface ScoreDelta {
   key: ScoreKey;
