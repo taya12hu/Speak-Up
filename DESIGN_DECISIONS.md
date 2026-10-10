@@ -50,7 +50,9 @@ Each entry records a significant choice, the alternatives that were considered, 
 
 **Why.** It adds no extra service, key or cost. The limitation is documented rather than hidden, and real phonetic scoring is listed in [TODO.md](TODO.md).
 
-## 5. Store history in a JSON file, written atomically
+## 5. Store history in a JSON file, written atomically *(superseded by #16)*
+
+> Superseded when the app became multi-user: history now lives in Supabase Postgres (#16). The entry is kept as a record of the single-user design; the legacy file can be imported with `npm run import:legacy` (#18).
 
 **Decision.** One `sessions.json` array. Writes go to a temp file and are renamed into place, appends are serialised through an in-process promise queue, and reads **fail closed**: only a missing file counts as empty history.
 
@@ -77,6 +79,8 @@ Each entry records a significant choice, the alternatives that were considered, 
 **Why.** Open CORS on `0.0.0.0` meant any website the user visited, and any device on the same network, could read their practice history and spend their Gemini quota. Same-origin removes the need for CORS entirely, and removes the `cors` dependency with it.
 
 **Trade-off.** The client relies on the proxy, so pointing a separately hosted front end at the API would need explicit CORS configuration. That is not a supported deployment.
+
+**Update for multi-user (#15–#19).** Network position is no longer the main protection: every route except `/api/health` now requires a verified user. The loopback bind and `Sec-Fetch-Site` check remain as defence in depth. Authentication uses a Bearer header rather than cookies, so browsers never attach credentials automatically and classic CSRF does not apply.
 
 ## 7. Composition root and dependency-injected routes
 
@@ -163,3 +167,83 @@ Each entry records a significant choice, the alternatives that were considered, 
 - `lucide-react` is tree-shaken, so only the ~35 icons used ship.
 
 **Trade-off.** The primitives are hand-maintained and cover only what this app needs. There is no theme toggle; the theme follows the OS setting.
+
+---
+
+The decisions below were made when Speak Up became a multi-user application.
+
+## 15. Verify Supabase access tokens locally on the API server
+
+**Decision.** `requireAuth` verifies each Bearer token with `jose`: signature, issuer, audience `authenticated`, expiry, `role = authenticated` and a UUID `sub`. Keys come from the project's public JWKS, fetched once and cached; legacy projects can set `SUPABASE_JWT_SECRET` for HS256 instead. The verified `sub` is the only source of the user id.
+
+**Alternatives.**
+- Call `supabase.auth.getUser(token)` on every request.
+- Trust a user id sent by the client.
+- Use session cookies.
+
+**Why.**
+- Local verification is cryptographically sound, adds no per-request network round-trip to Supabase, and keeps working while the Auth API is slow. It is also the approach Supabase recommends for asymmetric keys.
+- Trusting a client-supplied id would make every other control meaningless.
+- Bearer headers (rather than cookies) mean browsers never attach credentials on their own, so CSRF does not apply.
+
+**Trade-off.** Local verification cannot see server-side revocation. After "sign out everywhere" or a password change, an already-issued access token stays valid until it expires (Supabase default: 1 hour). Shorten the JWT expiry in the dashboard, or switch `verifyToken` to `getUser`, if that window is unacceptable. Expired, invalid and unverifiable tokens get distinct codes (`token_expired`, `token_invalid`, `auth_unavailable`), so the client can refresh and retry instead of failing.
+
+## 16. Postgres with Row Level Security, queried with the user's own token
+
+**Decision.** Practice history is the `practice_sessions` table in Supabase Postgres. The API server creates a fresh supabase-js client per request using the **public** publishable key plus the caller's access token. Every query therefore runs as that user, and the RLS policies (`(select auth.uid()) = user_id`) apply to the server's own queries. The repository also filters by `user_id` explicitly.
+
+**Alternatives.**
+- Give the server the service-role key and filter by `user_id` in code (RLS would then only protect direct client access).
+- Connect with `pg` and set `request.jwt.claims` per transaction.
+
+**Why.**
+- With the service-role key, a single missing `where user_id = …` would leak every user's history. With the user's token, Postgres refuses to return other users' rows even if the API code is wrong. This is defence in depth that the integration tests check directly against the database.
+- The running server holds no key that bypasses RLS.
+- A per-request client means there is no shared mutable state between users.
+- supabase-js over PostgREST needs no connection pooling or SQL driver.
+
+**Trade-offs.**
+- Each request constructs a small client object, which is negligible next to the network call.
+- The publishable key is public, so signed-in users can also reach PostgREST directly. RLS confines them to their own rows, and the check constraints still apply, but they could store unusual (well-formed) sessions in their *own* history.
+- The two JSON columns are schemaless beyond the check constraints, which is deliberate (see ARCHITECTURE: data model).
+
+## 17. Least-privilege table grants; immutable sessions; delete as the only mutation
+
+**Decision.**
+- All privileges are revoked from `anon` and `authenticated`.
+- `authenticated` gets `select`, `delete`, and `insert` on only `user_id, mode, topic, transcript, metrics, analysis`.
+- There is no `update` grant or policy.
+- The API gained `DELETE /api/sessions/:id`.
+
+**Why.**
+- RLS policies say *which rows*; grants say *which operations and columns*. Both are needed so that clients cannot backdate `created_at`, choose ids, or edit past feedback.
+- A practice attempt is a historical record, so editing has no product use.
+- Users should be able to remove their own data, and deleting the account cascades.
+- A delete that matches nothing returns the same 404 whether the row is missing or someone else's, so ids cannot be probed.
+
+## 18. Legacy JSON history is imported explicitly, never assigned automatically
+
+**Decision.** The old `sessions.json` is imported with an operator-run script (`npm run import:legacy`) that:
+
+- requires `--user-id` and checks that the account exists;
+- prints the owner's email and dry-runs by default;
+- validates records and keeps their ids and dates;
+- skips existing ids, so it is idempotent and never re-assigns.
+
+**Alternatives.**
+- Assign everything to the first account that signs up.
+- An in-app "claim old sessions" button.
+- Drop the data.
+
+**Why.** The legacy data has no owner, and any automatic rule would hand one person's practice history to whoever matched the rule. An in-app claim would let any user take it. Only the operator knows whose data it is, so the operator must say so. The script needs the service-role key (it writes rows for another user and sets `created_at`), which is why it is a local tool and not part of the server.
+
+## 19. Require sign-in for every API route, not only history
+
+**Decision.** Everything except `/api/health` sits behind `requireAuth`, including topic generation, vocab, sample answers, analysis and transcription. The whole client UI is behind the sign-in screen.
+
+**Why.**
+- In a multi-user deployment the AI routes spend the operator's Gemini quota and the transcription route spends server CPU and disk. Leaving them open would let anyone on the internet use them anonymously.
+- Authenticating before multer means unauthenticated uploads are never written to disk.
+- Hiding UI is not treated as a control: each endpoint enforces auth itself, and the HTTP tests call every private route without a token.
+
+**Trade-off.** There is no anonymous "try it" mode. Per-user rate limiting is not implemented yet (see TODO).

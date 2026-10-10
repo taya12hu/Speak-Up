@@ -1,197 +1,230 @@
 # Architecture
 
-This document describes how Speak Up is put together: its components, how a practice attempt moves through the system, the HTTP API, the data model, and the security and failure model. The reasoning behind the major choices is in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md).
+This document describes how Speak Up is put together: its components, how authentication and a practice attempt flow through the system, the HTTP API, the data model, and the security and failure model. The reasoning behind the major choices is in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md).
 
 ## System context
 
-Speak Up is a single-user application that runs entirely on the learner's machine, apart from one external dependency: the Gemini API.
+Speak Up is a multi-user web application. Learners sign in with Supabase Auth, and their practice history lives in Supabase Postgres, private to each account. Transcription runs on the API server with whisper.cpp; analysis is done by the Gemini API.
 
 ```mermaid
 flowchart TB
   user([Learner])
-  subgraph machine[Learner's machine]
-    browser[Browser: React client]
-    server[Node.js: Express API<br/>bound to 127.0.0.1]
-    whisper[whisper.cpp CLI<br/>+ ggml model]
-    store[(server/data/sessions.json)]
+  subgraph browser[Browser]
+    client[React client<br/>supabase-js: auth only]
+  end
+  subgraph host[API host]
+    server[Express API]
+    whisper[whisper.cpp CLI + model]
+    tmp[(data/tmp<br/>per-request audio)]
+  end
+  subgraph supabase[Supabase project]
+    auth[Auth<br/>issues JWTs, publishes JWKS]
+    db[(Postgres<br/>practice_sessions + RLS)]
   end
   gemini[[Google Gemini API]]
 
-  user -- speaks / reads feedback --> browser
-  browser -- "HTTP /api/* (same origin)" --> server
-  server -- "child process, WAV in / JSON out" --> whisper
-  server -- "atomic JSON writes" --> store
-  server -- "HTTPS: prompts + transcripts (text only)" --> gemini
+  user --> client
+  client -- "sign up / sign in / refresh" --> auth
+  client -- "HTTP /api/* with Bearer access token" --> server
+  server -- "fetch public signing keys (cached)" --> auth
+  server -- "PostgREST, as the user (their JWT)" --> db
+  server -- "child process" --> whisper
+  whisper --- tmp
+  server -- "prompts + transcripts (text)" --> gemini
 ```
 
-**Trust boundaries.** The browser is treated as untrusted input: every request body is validated on the server. Gemini is an untrusted *output* source, constrained by a response schema and post-processed (scores are clamped and the overall score is recomputed). Audio never crosses the machine boundary.
+**Trust boundaries.**
+- **The browser** is untrusted. Every request is authenticated and validated on the server, and identity is taken only from a verified token.
+- **Gemini** is an untrusted *output* source. Its replies are constrained by a schema, scores are clamped, and the overall score is recomputed on the server.
+- **The database** independently enforces ownership with Row Level Security, so a defect in the API cannot expose another user's rows.
 
 ## Components
 
 ### Client (`client/`)
 
-A React single-page app with no router: the four tabs are local state in `App.tsx`. The code is split into framework-free logic (`src/lib/`) and UI components grouped by flow (`src/components/`).
+A React single-page app with no router. `App.tsx` is an auth gate: signed-out visitors only see `AuthScreen`. Signed-in users get the practice app, which is **keyed by user id**, so switching accounts remounts everything and no state carries over.
 
 | Module | Responsibility |
 | --- | --- |
-| `App.tsx` | Tab shell. Holds the "retry a past session" state and lazy-loads History, which keeps Recharts out of the initial bundle. |
-| `components/layout/*` | `AppHeader` (navigation: a 4-column bar on phones) and `SystemStatus`, a readiness indicator backed by `GET /api/health` that names any missing setup step in its tooltip. |
-| `components/ui/*` | Small presentational primitives (Button, Card, Alert, Field/Select/TextInput, Badge, EmptyState, PageHeader, Spinner) that every screen is built from. |
-| `index.css` | Design tokens: semantic colours (`canvas`, `surface`, `line`, `fg`, `muted`, `accent`, `success`/`warning`/`danger`…) defined once for light and dark, following the OS preference. |
-| `components/modes/*` | Entry screens for each mode. Each one fetches its practice content (topics, an interview question, or a vocab word), then hands a topic to `PracticeFlow`. |
-| `components/practice/PracticeFlow.tsx` | State machine for one attempt: `prep → practice → transcribing → analyzing → report`, or `error` (which can retry back to `practice`). It orchestrates the API calls and saves the result. |
-| `components/practice/Recorder.tsx` | `MediaRecorder` capture. Releases the microphone on stop and on unmount, then hands back a WAV via `lib/wavEncoder`. |
-| `components/practice/Timer.tsx`, `PrepTimer.tsx`, `ProgressRing.tsx`, `StageStepper.tsx` | The speaking timer (a pacing aid only), the prep countdown with outline notes, the shared ring visual, and the Prepare → Speak → Analyse → Review progress indicator. |
-| `components/report/*` | `AnalysisReport` renders one attempt; `ScoreDisplay` provides the overall gauge, dimension bars and score pills; `SessionComparison` shows score deltas and transcripts against a previous attempt. |
-| `components/history/*` | Headline stats, trend chart, `Insights` (focus areas), and the expandable session list. |
-| `lib/wavEncoder.ts` | Decodes the browser recording (WebM/Opus or similar), downmixes and resamples to 16 kHz mono with `OfflineAudioContext`, and encodes 16-bit PCM WAV. |
-| `lib/fluency.ts` | Deterministic metrics from the transcript and segment timestamps. |
-| `lib/scores.ts`, `lib/insights.ts` | Score dimensions, score bands (strong / developing / needs work), attempt comparison, history stats, and weak-point aggregation. |
-| `lib/api.ts` | Typed `fetch` wrapper. Converts server `{ error }` bodies and network failures into `ApiError` with a user-facing message. |
+| `auth/AuthProvider.tsx` | Owns the Supabase session. Restores it on load (persisted by supabase-js and refreshed automatically) and tracks sign-in and sign-out. It gives the API client `getAccessToken`, `refreshAccessToken` and `onSessionExpired`. |
+| `auth/useAuth.ts`, `auth/authErrors.ts` | Hook for components; friendly messages for Supabase Auth errors (no hint whether the email or the password was wrong). |
+| `lib/supabase.ts` | Browser Supabase client, configured with the **public** publishable key and used for authentication only. |
+| `lib/api.ts` | Typed `fetch` wrapper. Attaches `Authorization: Bearer <token>`. On `401 token_expired` or `token_invalid` it refreshes once and retries the same request; if that fails it calls `onSessionExpired`, which signs out locally and shows "session expired". |
+| `components/auth/AuthScreen.tsx` | Sign-in / create-account form, plus the "check your email" state when confirmation is required. |
+| `components/layout/*` | Header, navigation, `AccountMenu` (email and sign-out), and `SystemStatus` (backed by `GET /api/health`). |
+| `components/practice/PracticeFlow.tsx` | One attempt: `prep → practice → transcribing → analyzing → report`, then saves the result to the user's history. |
+| `components/history/*` | The user's sessions: stats, chart, focus areas, reports, retry and delete. All of it is computed from `GET /api/sessions`, which only ever returns the caller's sessions. |
+| `components/modes/*`, `report/*`, `ui/*`, `lib/fluency.ts`, `lib/wavEncoder.ts`, `lib/scores.ts`, `lib/insights.ts` | Unchanged by the multi-user work: practice content, reports, design primitives and pure logic. |
 
 ### Server (`server/`)
 
-Express 5 with ES modules. `src/index.js` is the composition root: it reads config, builds the services and passes them into `createApp()`. Routes therefore never import infrastructure directly, which lets the tests build the real app around stub services.
+Express 5 with ES modules. `src/index.js` is the composition root: it builds config and services, then passes them into `createApp()`.
 
 ```mermaid
 flowchart LR
-  index[index.js<br/>composition root] --> config[config.js]
+  index[index.js] --> app[app.js]
+  index --> authSvc[services/auth.js<br/>JWT verifier]
+  index --> repo[services/sessionRepository.js]
   index --> gemini[services/gemini.js]
   index --> whisperSvc[services/whisper.js]
-  index --> storeSvc[services/sessionStore.js]
-  index --> app[app.js<br/>createApp deps]
-  app --> content[routes/content.js]
-  app --> speech[routes/speech.js]
-  app --> sessions[routes/sessions.js]
-  content & speech --> prompts[prompts.js]
-  content & speech --> schemas[schemas.js]
-  speech --> scoring[scoring.js]
-  content & speech & sessions --> validation[validation.js]
+  app --> xsite[rejectCrossSite]
+  xsite --> health["/health (public)"]
+  xsite --> requireAuth[requireAuth]
+  requireAuth --> content[routes/content.js]
+  requireAuth --> speech[routes/speech.js]
+  requireAuth --> sessions[routes/sessions.js]
+  sessions -- "forUser(req.auth)" --> repo
 ```
 
 | Module | Responsibility |
 | --- | --- |
-| `config.js` | Loads `server/.env`, applies defaults, validates numeric values, and returns a frozen config object. |
-| `app.js` | JSON body limit (2 MB), cross-site request rejection, the `/api` router, the JSON 404 for unknown API paths, static serving of `client/dist` when it exists, and the central error handler. |
-| `routes/content.js` | `POST /topics`, `/vocab`, `/interview-sample`. |
-| `routes/speech.js` | `POST /transcribe` (multipart upload to a temp `.wav` file, always deleted before responding) and `POST /analyze`. |
-| `routes/sessions.js` | `GET` and `POST /sessions`. The server assigns `id` and `date`. |
-| `services/gemini.js` | `askJSON({ prompt, schema })`: one call with a response schema, one retry on unparseable JSON, and SDK errors mapped to client-safe `HttpError`s (429 → rate limit, others → 502). |
-| `services/whisper.js` | Spawns `whisper-cli -oj -ml 1` with a timeout, parses its JSON into `{ text, segments, durationSec }`, computes duration from the WAV header, and checks the installation for `/api/health`. |
-| `services/sessionStore.js` | JSON-file persistence: atomic writes, a serialised append queue, and fail-closed reads. |
-| `prompts.js` / `schemas.js` | All prompt text and the Gemini response schemas. User text is embedded with `JSON.stringify`. |
-| `scoring.js` | Score weights; clamps each dimension to 0–100 and computes the overall score. |
-| `validation.js` / `errors.js` | Small validators that throw `HttpError(400, …)`; `HttpError` marks a message as safe to show the client. |
+| `services/auth.js` | `createTokenVerifier`: verifies signature, issuer (`<SUPABASE_URL>/auth/v1`), audience (`authenticated`), expiry, `role = authenticated` and a UUID `sub`. `createSupabaseTokenVerifier`: uses the project's public JWKS (remote, cached by `jose`), or `SUPABASE_JWT_SECRET` for legacy HS256 projects. `requireAuth`: parses the Bearer header and sets a frozen `req.auth = { userId, email, token }`. |
+| `services/sessionRepository.js` | `forUser({ userId, token })` returns `list`, `create` and `remove`. Each call builds a fresh supabase-js client carrying **that user's token** (no shared or cached client) and also filters by `user_id`. Database errors map to client-safe `HttpError`s. |
+| `routes/sessions.js` | `GET /sessions`, `POST /sessions`, `DELETE /sessions/:id`. Ownership comes only from `req.auth`. |
+| `routes/content.js`, `routes/speech.js` | Topics, vocab, sample answers, transcription and analysis. Stateless, but behind `requireAuth` because they spend Gemini quota and CPU. |
+| `app.js` | Middleware order and the central error handler, which returns `{ error, code? }` and logs details only for 5xx. |
+| `scripts/import-legacy-sessions.js` | Operator-run, explicit-owner import of the old JSON history (see [Data migration](#legacy-data-migration)). |
 
-## Data flow: one practice attempt
+## Authentication flow
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor L as Learner
-  participant C as Client (PracticeFlow)
+  participant C as React client
+  participant A as Supabase Auth
   participant S as Express API
-  participant W as whisper.cpp
-  participant G as Gemini
+  participant D as Postgres (RLS)
 
-  C->>S: POST /api/topics {category, difficulty, theme, count}
-  S->>G: topics prompt + TOPICS_SCHEMA
-  G-->>S: ["topic", ...]
-  S-->>C: string[]
-  L->>C: picks a topic, 60 s prep (optional outline), records answer
-  Note over C: MediaRecorder blob → OfflineAudioContext<br/>→ 16 kHz mono 16-bit WAV
-  C->>S: POST /api/transcribe (multipart "audio")
-  S->>W: whisper-cli -m model -f tmp.wav -oj -ml 1
-  W-->>S: tmp.json (near-word segments, ms offsets)
-  Note over S: delete tmp.wav + tmp.json
-  S-->>C: {text, segments[], durationSec}
-  Note over C: computeFluencyMetrics → fillers, wpm,<br/>pauses ≥ 1.5 s, stuck loops
-  C->>S: POST /api/analyze {topic, transcript, metrics}
-  S->>G: analysis prompt (metrics given as fixed facts) + ANALYSIS_SCHEMA
-  G-->>S: rewrite, issues, tips, notes, 8 dimension scores
-  Note over S: clamp scores, compute weighted overall
-  S-->>C: AnalysisResult
-  C->>L: report (and comparison when retrying)
-  C->>S: POST /api/sessions {mode, topic, transcript, metrics, analysis}
-  S-->>C: 201 Session {id, date, ...}
+  L->>C: email + password
+  C->>A: signInWithPassword
+  A-->>C: access token (JWT, ~1 h) + refresh token
+  Note over C: supabase-js persists the session<br/>and refreshes it before expiry
+  C->>S: GET /api/sessions<br/>Authorization: Bearer <access token>
+  S->>S: requireAuth: verify signature (JWKS),<br/>iss, aud, exp, role → req.auth.userId
+  S->>D: select … where user_id = userId<br/>(request made with the user's JWT)
+  Note over D: RLS: auth.uid() = user_id
+  D-->>S: only the caller's rows
+  S-->>C: Session[]
+  alt token expired / rejected
+    S-->>C: 401 { code: "token_expired" }
+    C->>A: refreshSession()
+    C->>S: retry once with the new token
+    Note over C: if it fails again → local sign-out,<br/>"Your session has expired"
+  end
 ```
 
-Two details matter here:
+## Data flow: one practice attempt
 
-- **Where the computation lives.** Metrics that can be measured are measured (step 9), and the model is told to use them as given. The model only supplies judgments: rewrites, explanations and per-dimension scores.
-- **Save failures do not hide results.** If step 15 fails, the report stays on screen with a warning, because the analysis has already been paid for in quota and time.
+1. **Content.** `POST /api/topics`, `/vocab` or `/interview-sample` (authenticated) → Gemini → JSON.
+2. **Record.** The browser records with MediaRecorder and encodes 16 kHz mono 16-bit WAV.
+3. **Transcribe.** `POST /api/transcribe` (multipart, authenticated). Auth runs *before* multer, so anonymous uploads never reach the disk. The upload is written to `data/tmp/<random-uuid>.wav`, whisper.cpp writes a JSON file next to it, and **both files are deleted before the response is sent**, including on failure. Concurrent uploads get distinct random filenames.
+4. **Metrics.** Computed in the browser from the transcript and segment timestamps.
+5. **Analyse.** `POST /api/analyze` → Gemini with a response schema. The server clamps the scores and computes the weighted overall score.
+6. **Save.** `POST /api/sessions`. The server validates the payload and inserts it with `user_id` taken from the verified token, using the user's JWT. Postgres assigns `id` and `created_at`. If saving fails, the report stays on screen with a warning.
+
+No audio is stored permanently, and nothing user-specific is held in server memory between requests.
 
 ## HTTP API
 
-All endpoints are under `/api`, take and return JSON (except the multipart upload), and report errors as `{ "error": string }` with an appropriate status.
+All endpoints are under `/api`. Errors are `{ "error": string, "code"?: string }`.
 
-| Method & path | Request | Success | Notable errors |
-| --- | --- | --- | --- |
-| `GET /health` | – | `{ gemini: { configured }, whisper: { binary, model } }` | – |
-| `POST /topics` | `{ category?, difficulty?, theme?, count?, interview? }` | `200 string[]` | `400` (unknown category or difficulty, `count` outside 1–10, theme over 100 chars) |
-| `POST /vocab` | `{}` | `200 { word, definition, example, speakingAngle }` | – |
-| `POST /interview-sample` | `{ question, framework: STAR\|PREP\|PPF\|MECE }` | `200 { sample }` | `400` |
-| `POST /transcribe` | multipart, field `audio` (WAV, ≤ 25 MB) | `200 { text, segments[{text,start,end}], durationSec }` | `400` (no file or not a WAV), `413` (too large), `503` (whisper missing), `504` (timeout) |
-| `POST /analyze` | `{ topic, transcript (non-blank), metrics }` | `200 AnalysisResult` | `400` |
-| `GET /sessions` | – | `200 Session[]`, newest first | `500` (unreadable history file) |
-| `POST /sessions` | `{ mode, topic, transcript, metrics, analysis }` | `201 Session` (server-assigned `id` and `date`) | `400` |
+| Method & path | Auth | Request | Success | Notable errors |
+| --- | --- | --- | --- | --- |
+| `GET /health` | public | – | `{ gemini, whisper, auth: { configured } }` (setup flags only) | – |
+| `POST /topics` | required | `{ category?, difficulty?, theme?, count?, interview? }` | `200 string[]` | `400` |
+| `POST /vocab` | required | `{}` | `200 VocabEntry` | – |
+| `POST /interview-sample` | required | `{ question, framework }` | `200 { sample }` | `400` |
+| `POST /transcribe` | required | multipart `audio` (WAV, ≤ 25 MB) | `200 { text, segments, durationSec }` | `400`, `413`, `503`, `504` |
+| `POST /analyze` | required | `{ topic, transcript, metrics }` | `200 AnalysisResult` | `400` |
+| `GET /sessions` | required | – | `200 Session[]`, the **caller's** sessions, newest first | `503 db_unavailable` |
+| `POST /sessions` | required | `{ mode, topic, transcript, metrics, analysis }`; any `user_id`, `id` or `date` sent is ignored | `201 Session` | `400`, `503` |
+| `DELETE /sessions/:id` | required | – | `204` | `400` (not a UUID), `404` (missing **or** not yours, deliberately indistinguishable) |
 
-The AI routes can also return `429` (Gemini rate limit), `502` (a Gemini error or invalid output) and `503` (no API key). Any route returns `403` for a cross-site browser request (see [Security model](#security-model)). Unexpected failures return a generic `500`; the details go only to the server log.
+**Authentication errors** (all `401`, with `WWW-Authenticate: Bearer`):
+
+| `code` | Meaning |
+| --- | --- |
+| `auth_required` | No Bearer token was sent. |
+| `token_expired` | The token is valid but has expired; the client refreshes and retries once. |
+| `token_invalid` | Bad signature, wrong project or audience, anon role, or malformed. |
+
+`503 auth_unavailable` means the signing keys could not be fetched; `503 auth_not_configured` means Supabase is not set up. AI routes may also return `429`, `502` or `503`. Cross-site browser requests get `403`.
 
 ## Data model
 
-History is a single JSON array in `server/data/sessions.json` (the directory can be changed with `DATA_DIR`). The canonical type is `Session` in `client/src/types.ts`:
+Defined in [`supabase/migrations/20261010120000_create_practice_sessions.sql`](supabase/migrations/20261010120000_create_practice_sessions.sql):
 
-```ts
-Session {
-  id: string                       // server-assigned UUID
-  date: string                     // server-assigned ISO timestamp
-  mode: 'random' | 'interview' | 'vocab'
-  topic: string
-  transcript: string
-  metrics: FluencyMetrics          // fillerCount, fillerBreakdown, wpm, pauseCount,
-                                   // longestPauseSec, totalPauseSec, stuckLoops?
-  analysis: AnalysisResult         // nativeRewrite, grammarIssues[], pronunciationTips[],
-                                   // fluencyCommentary, topicRelevanceNote?, ideaDepthNote?,
-                                   // stuckPoints?, scores, summary
-}
-```
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `uuid` | primary key, `gen_random_uuid()` |
+| `user_id` | `uuid` | not null, default `auth.uid()`, FK → `auth.users(id)` **on delete cascade** |
+| `created_at` | `timestamptz` | not null, default `now()` |
+| `mode` | `text` | `in ('random','interview','vocab')` |
+| `topic` | `text` | 1–1000 characters |
+| `transcript` | `text` | 1–50 000 characters |
+| `metrics` | `jsonb` | must be an object |
+| `analysis` | `jsonb` | object with `scores` (object), numeric `scores.overall`, and array `grammarIssues` |
 
-**Schema evolution.** There is no migration step. Fields added over time (`topicRelevance`, `ideaDepth`, their notes, `stuckPoints`, `stuckLoops`, grammar `category`) are optional in the types, and every view treats a missing value as "not available" rather than 0. A legacy session therefore renders with fewer sections, and comparisons and insights skip the dimensions it lacks.
+The index `(user_id, created_at desc)` serves the only query pattern: one user's history, newest first.
 
-**Shared constants.** The client and server are separate packages with no shared module, so three lists are deliberately duplicated and cross-referenced in comments: grammar categories, topic-category ids, and interview-framework ids. Server-side validation means any drift shows up immediately as a `400`, not silent misbehaviour.
+`metrics` and `analysis` are JSONB because they are produced and consumed as whole documents. They have evolved over time (sessions saved by earlier versions lack some fields), and they are never filtered on in SQL. The check constraints guarantee the fields the history views depend on. Deleting a user deletes their sessions.
+
+The API returns rows as `Session { id, date (= created_at), mode, topic, transcript, metrics, analysis }`; `user_id` is never sent to the client.
+
+### Legacy data migration
+
+The single-user version stored ownerless sessions in `server/data/sessions.json`. They are **not** migrated automatically, and the server never reads that file. `npm run import:legacy --prefix server -- --user-id <uuid> [--apply]` imports them, and:
+
+- requires the operator to name the owner explicitly, checks that the account exists, and prints its email for confirmation;
+- dry-runs unless `--apply` is given;
+- validates each record and skips invalid ones with a reason;
+- keeps each record's id and date, and skips ids that already exist, so re-running is safe and never re-assigns a row.
+
+The script uses the service-role key, because it writes rows for a user who is not the caller and sets `created_at`. That is why it is a local, operator-only tool.
+
+## Security model
+
+- **Authentication on every private endpoint.** `requireAuth` runs before every router except `/health`, including the AI and upload routes. The token is verified cryptographically on each request; nothing about identity is read from the body, query string or cookies.
+- **Ownership is enforced twice.**
+  1. The repository filters every query by `req.auth.userId`.
+  2. Every query is made **with the user's own JWT** through a per-request client, so Postgres RLS policies (`(select auth.uid()) = user_id` for select, insert-check and delete) apply independently.
+
+  The running API is configured only with the public publishable key; it holds no credential that bypasses RLS.
+- **Least privilege in the database.**
+  - All privileges are revoked from `anon` and `authenticated`.
+  - Only `select`, `delete` and column-limited `insert` (`user_id, mode, topic, transcript, metrics, analysis`) are granted.
+  - There is no `update` privilege or policy, so sessions are immutable, and clients cannot choose `id` or `created_at`.
+  - Signed-out callers have no access.
+- **Direct database access.** The publishable key is in the browser bundle, so a signed-in user could call PostgREST directly. RLS confines them to their own rows, and the check constraints still apply. They could insert unusual but well-formed sessions into *their own* history; this is documented in TODO.
+- **No information leaks across users.**
+  - A delete of someone else's session returns the same 404 as a missing one.
+  - Owner ids are never returned.
+  - Error responses for database failures are generic, with details only in the server log.
+- **Secrets.** `server/.env` and `client/.env.local` are gitignored; the examples contain placeholders only. The service-role key is used only by the import script and the opt-in integration tests, and must never have a `VITE_` prefix.
+- **Token lifetime.** Verification is local (signature and claims), so a token remains usable until it expires (Supabase default: 1 hour) even after the user signs out elsewhere; see DESIGN_DECISIONS #15.
+- **Unchanged from the single-user version:**
+  - `Sec-Fetch-Site` cross-site rejection;
+  - no CORS headers (same-origin through the Vite proxy or Express static serving);
+  - loopback bind by default;
+  - input validation and upload limits;
+  - JSON-escaped prompt interpolation.
 
 ## Error handling
 
 | Layer | Strategy |
 | --- | --- |
-| Server routes | No `try/catch` boilerplate: Express 5 forwards rejected promises to the central error handler. Expected failures throw `HttpError(status, safeMessage)`. |
-| Error handler | `HttpError` returns its status and message. Multer errors return `413`/`400`; body-parser client errors (bad JSON) return `400`. Anything else returns a generic `500`, with the error logged including method and path. |
-| External processes | whisper has a timeout and a capped stderr buffer; temp files are removed in `finally` blocks. |
-| Client | `lib/api.ts` converts every failure into an `ApiError` with a readable message, including "server unreachable". Every screen that calls the API renders that message. |
-
-## Security model
-
-The threat model is local: protect the API key, the Gemini quota and the practice history from *other software and other machines*. A single local user is trusted.
-
-- **Loopback-only bind.** The server listens on `127.0.0.1` by default, not all interfaces, so devices on the same network cannot reach it.
-- **No CORS.** The API sends no `Access-Control-Allow-*` headers, so scripts on other websites cannot read its responses. The client stays same-origin through the Vite proxy in development and Express static serving in production.
-- **Cross-site request rejection.** Without CORS, a malicious page could still fire "simple" cross-site requests (a form POST to `/api/vocab`, a multipart POST to `/api/transcribe`) that spend quota or CPU without ever reading the result. Every `/api` request with a `Sec-Fetch-Site` header other than `same-origin`/`none` is therefore rejected with `403` before reaching a route.
-  - Requests without the header (curl, scripts, very old browsers) are allowed; non-browser clients aren't a CSRF vector.
-- **Secrets.** The Gemini key lives only in `server/.env` (gitignored) and is never sent to the browser.
-- **Input limits:**
-  - JSON bodies up to 2 MB;
-  - uploads up to 25 MB, one file, written under a server-generated UUID filename;
-  - strict validation and length caps on every user-supplied field.
-- **Prompt hygiene.** User text is embedded in prompts as JSON string literals, so quotes or newlines cannot break out of their slot. This is not a complete defence against prompt injection, but the only party who could exploit it is the user, against their own feedback.
-- **Information disclosure.** Unexpected errors are reported to the client as a generic `500`, and `X-Powered-By` is disabled.
+| Auth | Missing → 401 `auth_required`; expired → 401 `token_expired`; any other verification failure → 401 `token_invalid`; JWKS unreachable → 503 `auth_unavailable`. |
+| Database | Network failure → 503 `db_unavailable`; PostgREST JWT rejection → 401 `token_expired`; check violation → 400 `invalid_session`; anything else → 500. The underlying error is kept as `cause` and logged. supabase-js retries network failures with backoff, so an unreachable database takes a few seconds to report. |
+| Routes | Express 5 forwards rejected promises to the central handler; expected failures throw `HttpError(status, message, code)`. |
+| Client | `ApiError { status, code }`; token errors trigger one refresh-and-retry, then a local sign-out with a message. Every screen renders API errors. |
 
 ## Testing strategy
 
 | Level | Where | What |
 | --- | --- | --- |
-| Unit | `server/test/{whisper,scoring,prompts,gemini}.test.js`, `client/src/lib/*.test.ts` | Pure logic: parsing, metrics, scoring, insights, encoding, prompt construction. |
-| Persistence | `server/test/sessionStore.test.js` | Real file system in a temp dir: ordering, 25 concurrent appends, a corrupted file is never overwritten, no leftover temp files. |
-| HTTP | `server/test/app.test.js` | The real Express app on an ephemeral port, with stub `askJSON` and `transcribeWav`: validation, status codes, error mapping, cross-site rejection, upload cleanup, server-side scoring. |
-| Integration | `server/test/whisper.integration.test.js` | The real whisper.cpp binary on a generated WAV. Skipped when it is not installed. |
-| Manual | – | Covers the UI and the live Gemini calls; see TODO.md for what is not automated. |
+| Unit | `server/test/auth.test.js` | The real verifier with locally generated ES256 keys and a local JWKS: valid, expired, wrong key, issuer and audience, anon role, non-UUID subject, unsigned/malformed, legacy HS256, and JWKS-fetch failure. |
+| HTTP | `server/test/app.test.js` | The real app and real verifier, with an in-memory per-user repository: 401s on every private route, uploads not written when unauthenticated, owner taken from the token, A/B list and delete isolation, identical 404s, database-failure responses, plus the existing AI, transcription and validation tests. |
+| Contract | `server/test/sessionRepository.test.js` | The real supabase-js client against a local HTTP stand-in for PostgREST: user token sent, `user_id` filters present, no `id`/`created_at` sent, per-user clients under concurrency, and the failure mapping (unreachable, 500, JWT rejected, constraint, unconfigured). |
+| Real project (opt-in) | `server/test/supabase.integration.test.js` | Two throwaway users against a real Supabase project: API isolation, and direct-to-database RLS checks (cross-user select, insert and delete; update denied; `created_at` denied; anon denied), invalid token, concurrent writes. |
+| Unit (client) | `client/src/**/*.test.ts` | API client token handling (Bearer header, single refresh-and-retry, session expiry, no retry on non-token errors), auth error messages, metrics, scores, insights, and the WAV encoder. |
