@@ -1,16 +1,109 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Components use only these semantic utilities (bg-surface, text-muted,
+ * border-line, bg-accent, …), so light and dark themes are defined once, here, and follow
+ * the operating-system preference.
+ */
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+}
+
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --canvas: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --line: #e3e6eb;
+  --line-strong: #cdd2da;
+  --fg: #111827;
+  --muted: #4b5563;
+  --subtle: #8a93a2;
+
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-fg: #ffffff;
+  --accent-text: #4338ca;
+  --accent-soft: #eef0fe;
+  --accent-line: #c7cbfa;
+
+  --success: #047857;
+  --success-soft: #ecfdf5;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
+  --info: #0369a1;
+  --info-soft: #f0f9ff;
 }
 
-body {
-  margin: 0;
-  background: #0f1115;
-  color: #e5e7eb;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #0c0d10;
+    --surface: #15171c;
+    --surface-2: #1d2027;
+    --line: #272b34;
+    --line-strong: #363b47;
+    --fg: #f3f4f6;
+    --muted: #a3aab6;
+    --subtle: #6d7482;
+
+    --accent: #6366f1;
+    --accent-hover: #7c7ff5;
+    --accent-fg: #ffffff;
+    --accent-text: #a5b4fc;
+    --accent-soft: rgb(99 102 241 / 0.12);
+    --accent-line: rgb(129 140 248 / 0.35);
+
+    --success: #34d399;
+    --success-soft: rgb(52 211 153 / 0.1);
+    --warning: #fbbf24;
+    --warning-soft: rgb(251 191 36 / 0.1);
+    --danger: #f87171;
+    --danger-soft: rgb(248 113 113 / 0.1);
+    --info: #38bdf8;
+    --info-soft: rgb(56 189 248 / 0.1);
+  }
 }
 
-#root {
-  min-height: 100svh;
+@layer base {
+  body {
+    @apply bg-canvas font-sans text-fg antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  #root {
+    min-height: 100svh;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
 }
