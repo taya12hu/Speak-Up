@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how Speak Up is put together: its components, how authentication and a practice attempt flow through the system, the HTTP API, the data model, and the security and failure model. The reasoning behind the major choices is in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md).
+This document describes how Speak Up is put together: its components, how authentication and a practice attempt flow through the system, the HTTP API, the data model, and the security and failure model.
 
 ## System context
 
@@ -196,13 +196,13 @@ The script uses the service-role key, because it writes rows for a user who is n
   - Only `select`, `delete` and column-limited `insert` (`user_id, mode, topic, transcript, metrics, analysis`) are granted.
   - There is no `update` privilege or policy, so sessions are immutable, and clients cannot choose `id` or `created_at`.
   - Signed-out callers have no access.
-- **Direct database access.** The publishable key is in the browser bundle, so a signed-in user could call PostgREST directly. RLS confines them to their own rows, and the check constraints still apply. They could insert unusual but well-formed sessions into *their own* history; this is documented in TODO.
+- **Direct database access.** The publishable key is in the browser bundle, so a signed-in user could call PostgREST directly. RLS confines them to their own rows, and the check constraints still apply. They could insert unusual but well-formed sessions into *their own* history; this is an accepted limitation.
 - **No information leaks across users.**
   - A delete of someone else's session returns the same 404 as a missing one.
   - Owner ids are never returned.
   - Error responses for database failures are generic, with details only in the server log.
 - **Secrets.** `server/.env` and `client/.env.local` are gitignored; the examples contain placeholders only. The service-role key is used only by the import script and the opt-in integration tests, and must never have a `VITE_` prefix.
-- **Token lifetime.** Verification is local (signature and claims), so a token remains usable until it expires (Supabase default: 1 hour) even after the user signs out elsewhere; see DESIGN_DECISIONS #15.
+- **Token lifetime.** Verification is local (signature and claims), so a token remains usable until it expires (Supabase default: 1 hour) even after the user signs out elsewhere. This is the trade-off for verifying locally without a network call per request; shorten the JWT expiry in Supabase if that window is too long.
 - **Unchanged from the single-user version:**
   - `Sec-Fetch-Site` cross-site rejection;
   - no CORS headers (same-origin through the Vite proxy or Express static serving);

@@ -11,7 +11,7 @@ const invalid = () => new HttpError(401, 'Invalid authentication token. Please s
  * caller's identity. `key` is a JWKS resolver (asymmetric signing keys) or a secret (legacy HS256).
  *
  * Note: local verification cannot see server-side sign-outs, so a token stays usable until it
- * expires (Supabase default: 1 hour). See DESIGN_DECISIONS.md for the trade-off.
+ * expires (Supabase default: 1 hour). That is the trade-off for avoiding a network call per request.
  */
 export function createTokenVerifier({ issuer, key, algorithms }) {
   return async function verifyToken(token) {

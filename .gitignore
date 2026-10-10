@@ -22,3 +22,7 @@ whisper/models/
 !.vscode/extensions.json
 .idea/
 .DS_Store
+
+# Local planning notes (kept out of the public repository)
+TODO.md
+DESIGN_DECISIONS.md

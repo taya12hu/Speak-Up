@@ -67,7 +67,7 @@ How a practice attempt flows:
 2. The server verifies the token and takes the user id **only** from it.
 3. The server reads and writes that user's sessions using the user's own token, so Postgres Row Level Security enforces ownership on every query.
 
-[ARCHITECTURE.md](ARCHITECTURE.md) has the data flow, the API reference and the security model. [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) explains the trade-offs.
+[ARCHITECTURE.md](ARCHITECTURE.md) has the data flow, the API reference and the security model.
 
 ## Tech stack
 
@@ -275,7 +275,7 @@ What the tests cover:
 
   It needs `SUPABASE_SERVICE_ROLE_KEY` in `server/.env` and the migration applied.
 
-React components have no automated tests; see [TODO.md](TODO.md).
+React components have no automated tests.
 
 ## Project structure
 
@@ -331,5 +331,3 @@ React components have no automated tests; see [TODO.md](TODO.md).
 | "Please confirm your email address first" | Email confirmation is on: click the link in the sign-up email. |
 | `429` "Gemini rate limit reached" | Free-tier quota. Wait a minute. |
 | `503` "Could not start whisper.cpp" | Wrong `WHISPER_BIN_PATH`, or the DLLs are not next to `whisper-cli.exe`. |
-
-Known limitations and planned work are tracked in [TODO.md](TODO.md).
